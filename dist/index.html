@@ -10,11 +10,13 @@
 .engine-details{margin-top:12px;border-top:1px solid #304035;padding-top:10px}.engine-details summary{font-size:13px;color:#c4d8ba;cursor:pointer;padding:3px 0}.engine-details summary:focus-visible{outline:2px solid #91bd77;outline-offset:4px;border-radius:3px}.engine-details .review-note{line-height:1.55}
 .mate-entry{margin-top:14px}.practice-panel{margin-top:16px;padding:18px;border:1px solid #4e6b49;border-radius:12px;background:#213025}.practice-panel h2{margin:9px 0}.practice-status{min-height:44px;margin:10px 0 16px;color:#d7e6cf}.practice-actions{flex-wrap:wrap;margin:12px 0}.practice-actions button{flex:1;min-height:42px;white-space:nowrap}.practice-panel>button{margin-top:10px;min-height:44px}.promotion-choice{padding:12px;border:1px solid #6e8a60;border-radius:9px;background:#142218}.promotion-choice p{margin:0;color:#d7e6cf}.practice-solution{line-height:1.7;overflow-wrap:anywhere}[hidden]{display:none!important}
 .practice-mode .left,.practice-mode .right,.practice-mode .control,.practice-mode #seek,.practice-mode #coach,.practice-mode #engineDetails,.practice-mode #tryMate{display:none!important}.practice-mode .layout{grid-template-columns:minmax(0,620px);justify-content:center}.practice-mode .boardpanel{width:100%;max-width:620px;margin:0 auto}.practice-mode button.sq{border:0;border-radius:0;padding:0;min-width:0;cursor:pointer;color:inherit;font:inherit;touch-action:manipulation}.practice-mode button.sq:hover:not(:disabled){filter:none}.practice-mode button.sq:disabled{opacity:1;cursor:default}.practice-mode .sq.practice-selected{box-shadow:inset 0 0 0 4px #416b2c;z-index:1}.practice-mode .sq.practice-target:before{content:'';position:absolute;width:26%;height:26%;border-radius:50%;background:#243f2a70;z-index:2;pointer-events:none}.practice-mode .sq.practice-capture:before{content:'';position:absolute;inset:5%;border:4px solid #243f2a9c;border-radius:50%;z-index:2;pointer-events:none}.practice-mode .sq:focus-visible{outline:3px solid #172c16;outline-offset:-4px;z-index:3}.mate-teaser button{margin-top:12px}
+.app-tabs{display:flex;gap:6px;max-width:1320px;margin:0 auto;padding:16px 24px 0}.app-tab{border:1px solid transparent;background:transparent;color:#aebcaf;border-radius:10px;padding:11px 20px;font-weight:700;min-height:44px}.app-tab[aria-selected=true]{background:#2a3e2c;color:#d0f1ad;border-color:#4d6b43}.app-tab:focus-visible,.category-filter:focus-visible{outline:2px solid #c4ee8e;outline-offset:3px}.practice-home{max-width:1160px;margin:auto;padding:30px 24px 44px}.practice-intro{max-width:640px;margin-bottom:25px}.practice-intro h1{font-size:36px;margin-top:12px}.practice-intro p{font-size:16px}.category-filters{display:flex;gap:9px;flex-wrap:wrap;margin:22px 0 28px}.category-filter{border:1px solid #3d5142;background:#1a241d;color:#b8cbb3;border-radius:999px;padding:10px 17px;min-height:44px}.category-filter[aria-pressed=true]{background:#c4ee8e;border-color:#c4ee8e;color:#172417;font-weight:700}.practice-group{margin-bottom:30px}.practice-group-heading{display:flex;align-items:center;gap:12px;margin-bottom:14px}.practice-group-heading h2{font-size:23px;margin:0}.practice-group-heading p{margin:4px 0 0}.category-icon{display:grid;place-items:center;width:44px;height:44px;flex-shrink:0;border-radius:12px;background:#304335;color:#c4ee8e;font-size:26px}.practice-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px}.practice-card{display:flex;flex-direction:column;padding:21px;border:1px solid #344a39;border-radius:15px;background:#1a241d;min-width:0}.practice-card h3{margin:14px 0 0;font-size:18px;letter-spacing:-.3px}.practice-card p{flex:1;margin:9px 0 18px}.practice-card .pill{align-self:flex-start}.practice-card .row{flex-wrap:wrap}.practice-card button{min-height:44px}.practice-card.planned{border-style:dashed;background:#151f19}.planned-label{font-size:12px;color:#98ab99}.practice-game-mates{display:grid;gap:8px;margin-top:12px;max-height:220px;overflow:auto}.practice-game-mates button{text-align:left}.practice-home .error:empty{display:none}.practice-home-footer{border-top:1px solid #304035;padding-top:17px;margin-top:32px;font-size:13px;color:#98ab99}.practice-mode .app-tabs{padding-bottom:0}@media(max-width:720px){.app-tabs{padding:12px 12px 0}.app-tab{flex:1}.practice-home{padding:24px 12px 32px}.practice-intro h1{font-size:30px}.practice-cards{grid-template-columns:1fr}.category-filters{gap:7px}.category-filter{padding:9px 13px}.practice-card{padding:19px}}
 </style>
 </head>
 <body>
 <header class="top"><div class="logo">♞</div><div class="brand">Chess Coach</div><span class="tag">Learn from every move — even the quiet ones.</span></header>
-<main class="layout">
+<nav class="app-tabs" role="tablist" aria-label="Chess Coach sections"><button class="app-tab" id="reviewTab" role="tab" aria-selected="true" aria-controls="reviewView" tabindex="0">Game review</button><button class="app-tab" id="practiceTab" role="tab" aria-selected="false" aria-controls="practiceView" tabindex="-1">Practice</button></nav>
+<main class="layout" id="reviewView" role="tabpanel" aria-labelledby="reviewTab">
 <section class="panel left">
  <div class="eyebrow">01 / Your game</div><h1>Paste your game.<br>Get better at chess.</h1><p>Copy a PGN from Chess.com or Lichess. Stockfish calculates the positions while you explore the board and review your moves.</p>
  <textarea id="pgn" aria-label="Paste PGN" spellcheck="false" placeholder='[White "Player1"]\n[Black "Player2"]\n\n1. e4 e5 2. Nf3 Nc6 ...'></textarea>
@@ -26,7 +28,7 @@
  <div class="eyebrow">02 / Choose your side</div><p style="margin-bottom:8px">Which player are you?</p><select class="select" id="player"><option value="auto">Detect EarthsDirtiest (if present)</option><option value="white">I played White</option><option value="black">I played Black</option></select>
  <div class="separator"></div><div class="eyebrow">How coaching works</div><p>Learn what your move changed, which danger to notice, and what to try instead. Explore a suggested line to see how your opponent could respond.</p><div class="note">Stockfish calculates the moves locally in this browser. The coach turns those lines and the position on the board into practical lessons. Your PGN stays here. Longer searches can change the advice.</div>
 </section>
-<section class="panel boardpanel">
+<section class="panel boardpanel" id="reviewBoard">
  <div class="row between" style="margin-bottom:15px"><div><div class="eyebrow" id="gameTitle">YOUR BOARD</div><h2 id="positionTitle">Ready to play through</h2></div><div class="pill" id="sideLabel">Black perspective</div></div>
  <div class="board-wrap"><div class="board" id="board" aria-label="Chessboard"></div><div class="coords" id="coords"></div><details class="engine-details" id="engineDetails"><summary>Show engine details</summary><div class="evaluation"><div><span class="hint">Evaluation · White's viewpoint</span><div class="score" id="evaluation">—</div></div><span class="hint" id="searchDepth">Awaiting Stockfish</span></div><div class="review-note" id="lossSummary">Average evaluation loss will appear as your moves are reviewed.</div><div class="review-note">Positive scores favor White; negative scores favor Black. M indicates a forced mate found at this search depth. Scores are estimates from a limited search.</div></details></div>
  <div class="row control"><button class="secondary" id="first" aria-label="First move">⇤</button><button class="secondary" id="prev" aria-label="Previous move">←</button><span id="step" style="font-size:13px;min-width:64px;text-align:center">0 / 0</span><button class="secondary" id="next" aria-label="Next move">→</button><button class="secondary" id="last" aria-label="Last move">⇥</button></div>
@@ -46,12 +48,46 @@
  </section>
  <div class="comment" id="coach"><div class="eyebrow">YOUR PERSONAL COACH</div><h3>Load a PGN to begin</h3><p>Choose a move to see what it accomplished, what it threatened, and what you might improve.</p></div>
 </section>
-<section class="panel right">
+<section class="panel right" id="reviewRight">
  <div class="row between"><div><div class="eyebrow">03 / Move-by-move</div><h2>Every move matters</h2></div><span class="pill" id="count">0 moves</span></div><p>Tap any move to jump to that moment. Your moves are underlined; mistakes worth revisiting are outlined.</p><div class="moves" id="moves"><div class="empty">Your move list will appear here.</div></div>
  <div class="separator"></div><div class="eyebrow">Game summary</div><div class="row between" style="margin-top:10px"><div><div class="score" id="result">—</div><span class="hint" id="players">No game loaded</span></div><div><span class="pill" id="reviewed">0 reviewed</span></div></div><div class="separator"></div>
  <div class="eyebrow">Coaching priorities</div><div id="priorities"><p>After analyzing a game, you'll see the habits worth practicing.</p></div>
  <div class="separator"></div><button class="secondary full" id="copy" disabled>Copy coaching report</button>
 </section>
-</main><div class="footer">Chess Coach · Learn from your games with local Stockfish analysis. <a href="./vendor/stockfish/NOTICE.md">Stockfish source and license</a> · <a href="./vendor/chess.js/LICENSE">chess.js license</a></div>
+</main>
+<main id="practiceView" role="tabpanel" aria-labelledby="practiceTab" hidden>
+ <div class="practice-home" id="practiceHub">
+  <div class="practice-intro"><div class="eyebrow">BUILD YOUR CHESS HABITS</div><h1>A little practice.<br>A stronger next game.</h1><p>Choose a category and work on one skill at a time. Start with a checkmate, or explore the practice areas coming next.</p></div>
+  <div class="category-filters" role="group" aria-label="Practice categories"><button class="category-filter" data-category="all" aria-pressed="true">All categories</button><button class="category-filter" data-category="openings" aria-pressed="false">Openings</button><button class="category-filter" data-category="checkmates" aria-pressed="false">Checkmates</button><button class="category-filter" data-category="puzzles" aria-pressed="false">Puzzles</button></div>
+  <div class="error" id="practiceHubError" role="alert"></div>
+  <section class="practice-group" data-practice-group="openings" aria-labelledby="openingsHeading">
+   <div class="practice-group-heading"><span class="category-icon" aria-hidden="true">♙</span><div><h2 id="openingsHeading">Openings</h2><p>Build a position you know how to play.</p></div></div>
+   <div class="practice-cards">
+    <article class="practice-card planned"><span class="pill">Opening foundations</span><h3>Start with a plan</h3><p>Practice developing your pieces, contesting the center, and getting your king safe.</p><span class="planned-label">Interactive drills coming next</span></article>
+    <article class="practice-card planned"><span class="pill">Play as White</span><h3>Your first moves</h3><p>Learn the ideas behind king’s pawn and queen’s pawn openings, one move at a time.</p><span class="planned-label">Interactive drills coming next</span></article>
+    <article class="practice-card planned"><span class="pill">Play as Black</span><h3>Meet the opening</h3><p>Build a response to 1. e4 and 1. d4, and understand what your pieces are aiming for.</p><span class="planned-label">Interactive drills coming next</span></article>
+   </div>
+  </section>
+  <section class="practice-group" data-practice-group="checkmates" aria-labelledby="checkmatesHeading">
+   <div class="practice-group-heading"><span class="category-icon" aria-hidden="true">♚</span><div><h2 id="checkmatesHeading">Checkmates</h2><p>Find the finish. Keep the solution hidden until you need it.</p></div></div>
+   <div class="practice-cards">
+    <article class="practice-card"><span class="pill">Ready to play · Beginner</span><h3>Mate in one</h3><p>Find the move that ends the game. Try the same idea from either side of the board.</p><div class="row"><button class="secondary" id="drill-mate-one-white" data-drill="mate-one-white">Play as White</button><button class="secondary" id="drill-mate-one-black" data-drill="mate-one-black">Play as Black</button></div></article>
+    <article class="practice-card"><span class="pill">Ready to play · Two moves</span><h3>Mate in two</h3><p>Plan your first move, face Stockfish’s defense, and finish the mating attack.</p><button class="primary" id="drill-mate-two" data-drill="mate-two">Try mate in two</button></article>
+    <article class="practice-card"><span class="pill">From this review</span><h3>Checkmates from your game</h3><p id="practiceGameStatus">Review a game to find mating attacks you can try here.</p><button class="secondary" id="practiceGoReview">Go to game review</button><div class="practice-game-mates" id="practiceGameMates"></div></article>
+   </div>
+  </section>
+  <section class="practice-group" data-practice-group="puzzles" aria-labelledby="puzzlesHeading">
+   <div class="practice-group-heading"><span class="category-icon" aria-hidden="true">♞</span><div><h2 id="puzzlesHeading">Puzzles</h2><p>Learn to notice the opportunity before you move.</p></div></div>
+   <div class="practice-cards">
+    <article class="practice-card planned"><span class="pill">Tactics</span><h3>Forks &amp; double attacks</h3><p>Look for a move that threatens two targets and makes your opponent choose.</p><span class="planned-label">Interactive puzzles coming next</span></article>
+    <article class="practice-card planned"><span class="pill">Tactics</span><h3>Pins &amp; skewers</h3><p>Spot pieces that cannot move safely and attacks that line up valuable targets.</p><span class="planned-label">Interactive puzzles coming next</span></article>
+    <article class="practice-card planned"><span class="pill">Board awareness</span><h3>Loose pieces</h3><p>Check what is attacked and what is defended before choosing a capture.</p><span class="planned-label">Interactive puzzles coming next</span></article>
+   </div>
+  </section>
+  <p class="practice-home-footer">The practice library is growing. Opening drills and tactical puzzles are coming next.</p>
+ </div>
+ <div class="layout" id="practiceSession" hidden></div>
+</main>
+<div class="footer">Chess Coach · Learn from your games with local Stockfish analysis. <a href="./vendor/stockfish/NOTICE.md">Stockfish source and license</a> · <a href="./vendor/chess.js/LICENSE">chess.js license</a></div>
 <script type="module" src="./js/app.js"></script>
 </body></html>

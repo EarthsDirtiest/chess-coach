@@ -23,8 +23,9 @@ export class MatePracticeUI {
     };
   }
   get active() { return Boolean(this.session); }
-  start(options) {
+  start({ title = 'Find the checkmate', returnLabel = 'Return to review', ...options }) {
     this.close(); this.resetInput();
+    this.title = title; this.returnLabel = returnLabel;
     this.session = new MatePractice({ ...options, onChange:() => this.render() });
     document.body.classList.add('practice-mode'); $('practicePanel').hidden = false;
     // Do not leave the original game's continuation in the visible practice screen.
@@ -58,7 +59,8 @@ export class MatePracticeUI {
     if (!this.session) return;
     const state = this.session.state, busy = ['loading', 'thinking'].includes(state.status);
     $('practicePanel').dataset.state = state.status;
-    $('gameTitle').textContent = 'CHECKMATE PRACTICE'; $('positionTitle').textContent = 'Find the checkmate';
+    $('gameTitle').textContent = 'CHECKMATE PRACTICE'; $('positionTitle').textContent = this.title;
+    $('practiceReturn').textContent = this.returnLabel;
     $('sideLabel').textContent = `You play ${title(state.attacker)}`;
     $('practiceStatus').textContent = state.message;
     $('practiceUndo').disabled = !state.canUndo;
