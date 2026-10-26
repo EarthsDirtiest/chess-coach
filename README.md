@@ -19,7 +19,8 @@ Node installation: deploy the committed `dist/` directory.
 
 ## Analysis and coaching
 
-The top navigation separates **Game review**, **Practice**, and **Game history**.
+The top navigation separates **Game review**, **Practice**, **Game history**, and
+**My coach**.
 The Practice library contains three playable exercises in each category:
 
 - **Openings:** Italian Game as White, Queen’s Gambit Declined as White, and a
@@ -32,13 +33,58 @@ The Practice library contains three playable exercises in each category:
   knight are accepted. Solutions remain hidden until requested.
 
 Mating positions from the current game remain available as additional practice.
-All exercises support undo, restart, reveal, and return. Weakness memory and
-personalized recommendations remain future work.
+All exercises support undo, restart, reveal, and return. Personal practice
+recommendations appear above the category library after completed game reviews.
 
 Standalone exercises use the existing Stockfish trainer without replacing the
 loaded PGN or its analyses. Return to practices keeps the category selection;
 switching back to Game review restores the original review position. The tab
 buttons also support Left/Right, Home and End keys.
+
+## Personal coach and progress
+
+**My coach** remembers completed game assessments in IndexedDB alongside the game
+history. The database upgrades from version 1 without removing existing PGNs.
+After a full analysis, confirm **I played White** or **I played Black**; automatic
+recognition is used only when an EarthsDirtiest header actually matches. If the
+side is unknown, the game is not added to the profile until selected. Reopening
+a scored history entry restores its tracked side. Changing that selection after
+analysis corrects the existing report rather than adding the opponent as a
+second game. Examples, practice completions, partial/paused reviews and engine
+failures do not change game progress. Earlier saved games contribute after a
+complete reanalysis.
+
+Each match has one report keyed by the same canonical identity as game history.
+Reanalysis replaces its report while preserving its first-analysis order. Updates
+are transactional across the game and report stores, so concurrent tabs cannot
+inflate the game count or create reports without a saved PGN. Every completed
+analysis shows an **After this game** update and a link to progress and practice.
+Storage errors leave game review available and clearly report that the coaching
+update was not saved.
+
+Tracked themes are mating threats, lost mating attacks, material safety, forcing
+moves, opening development, drawn advantages and calculation. Labels use legal
+board facts and the engine line; unexplained evaluation losses stay general.
+No prose is parsed to infer a weakness. A move matching the previous engine
+choice is protected from follow-up search fluctuations. Priorities sum error
+severity across the latest ten reports, with each earlier report weighted by
+0.85 relative to the next, normalized over the player's own moves. Available
+practice buttons and actual moves to revisit accompany each priority. A single
+incident is labeled an early signal, not a proven recurring weakness.
+
+The coach score is a transparent heuristic, not Elo or a chess-site accuracy
+formula: start at 100, subtract the average move penalty across the player's
+moves. Centipawn losses below 50 are ignored; otherwise penalty is loss/5 capped
+at 60. Allowing or losing a found forced mate costs 70 separately, not fabricated
+centipawns. The recent score aggregates the latest five distinct reviews by
+own-move count. Trend compares equal adjacent groups of up to five reports in
+first-analysis order and also shows theme errors per 100 own moves. Fewer than
+three games or 30 own moves is explicitly provisional. Opponents, positions,
+sample size and search settings can all change the estimate. Practice completion
+alone does not claim real-game improvement.
+
+Profiles, scores and PGNs stay in this browser/device; clearing site data removes
+them. There is no external model, account sync or server storage.
 
 ## Game history
 

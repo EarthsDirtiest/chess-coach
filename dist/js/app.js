@@ -6,6 +6,7 @@ import { getMateOpportunity } from './mate-practice.js';
 import { MatePracticeUI } from './mate-practice-ui.js';
 import { PracticeHub } from './practice-hub.js';
 import { GameHistoryUI } from './game-history-ui.js';
+import { CoachProfileUI } from './coach-profile-ui.js';
 
 const $ = id => document.getElementById(id);
 const start = () => ['rnbqkbnr','pppppppp','........','........','........','........','PPPPPPPP','RNBQKBNR'].map(row => row.split(''));
@@ -14,15 +15,38 @@ let game = null, ply = 0, side = 'black', engine = null, runVersion = 0, phase =
 let reviewSnapshot = null;
 let activeTab = 'review';
 let importVersion = 0;
-const tabScroll = { review:0, practice:0, history:0 };
-const tabs = ['review', 'practice', 'history'];
+const tabScroll = { review:0, practice:0, history:0, coach:0 };
+const tabs = ['review', 'practice', 'history', 'coach'];
+let trackGame = true, currentGameSaved = Promise.resolve(), reportSignature = '', lastReviewQuality = 'balanced';
 const revealedPositions = new Set();
 const practice = new MatePracticeUI({ onReturn:returnToReview });
 const hub = new PracticeHub({ onStart:options => enterPractice({ ...options, origin:'practice' }), onReview:() => changeTab('review') });
 const historyUI = new GameHistoryUI({ onOpen:record => {
-  try { load(record.pgn, { save:false }); changeTab('review'); $('saveStatus').textContent = 'Opened from game history. Stockfish is reviewing the saved PGN.'; }
+  try { if (record.report) $('player').value = record.report.side; load(record.pgn, { save:false }); changeTab('review'); $('saveStatus').textContent = 'Opened from game history. Stockfish is reviewing the saved PGN.'; }
   catch (error) { $('historyError').textContent = `This saved game could not be opened: ${error.message}`; }
 } });
+const coachProfile = new CoachProfileUI({ store:historyUI.store, onPractice:enterPractice, onEvidence:async example => {
+  try {
+    const record = await historyUI.store.get(example.gameId);
+    if (!record) throw new Error('The original PGN is unavailable. Import the game again to revisit this move.');
+    $('player').value = example.side; load(record.pgn, { save:false }); changeTab('review'); jump(example.ply);
+  } catch (error) { $('coachProfileError').textContent = error.message; }
+} });
+
+function confirmedSide() {
+  if (!game) return null;
+  if (['white','black'].includes($('player').value)) return $('player').value;
+  if (game.headers.White?.toLowerCase() === 'earthsdirtiest') return 'white';
+  if (game.headers.Black?.toLowerCase() === 'earthsdirtiest') return 'black';
+  return null;
+}
+function recordCompletedReview() {
+  const owner = confirmedSide();
+  if (!game || phase !== 'complete' || !trackGame || !owner) return;
+  const signature = `${runVersion}:${owner}`; if (signature === reportSignature) return;
+  reportSignature = signature;
+  void coachProfile.record(game, owner, lastReviewQuality, currentGameSaved).then(() => historyUI.refresh());
+}
 
 function activateTab(tab) {
   activeTab = tab;
@@ -37,6 +61,7 @@ function changeTab(tab) {
   if (activeTab === tab) return;
   tabScroll[activeTab] = window.scrollY; activateTab(tab); window.scrollTo(0, tabScroll[tab]);
   if (tab === 'history') void historyUI.refresh();
+  if (tab === 'coach') void coachProfile.refresh();
 }
 function enterPractice({ drill = null, positionPly = ply, origin = 'review', focusId = 'tryMate' } = {}) {
   if (practice.active) return;
@@ -47,16 +72,16 @@ function enterPractice({ drill = null, positionPly = ply, origin = 'review', foc
   tabScroll[origin] = window.scrollY;
   cancelReview('paused');
   $('practiceHubError').textContent = '';
-  if (origin === 'practice') {
+  if (origin !== 'review') {
     $('practiceSession').appendChild($('reviewBoard')); $('practiceSession').hidden = false; $('practiceHub').hidden = true;
     activateTab('practice');
   }
   try {
     practice.start({ drill, initialFen:drill ? drill.fen : game.initialFen, moves:drill ? [] : state.uciMoves, analysis,
-      title:drill?.title || 'Find the checkmate', returnLabel:origin === 'practice' ? 'Return to practices' : 'Return to review' });
+      title:drill?.title || 'Find the checkmate', returnLabel:origin === 'coach' ? 'Return to my coach' : origin === 'practice' ? 'Return to practices' : 'Return to review' });
     window.scrollTo(0, 0);
   }
-  catch (error) { returnToReview(); $(origin === 'practice' ? 'practiceHubError' : 'error').textContent = error.message; }
+  catch (error) { returnToReview(); $(origin === 'coach' ? 'coachProfileError' : origin === 'practice' ? 'practiceHubError' : 'error').textContent = error.message; }
 }
 function returnToReview({ resume = true, destination = null } = {}) {
   practice.close();
@@ -95,26 +120,29 @@ function cancelReview(nextPhase = 'paused') {
   engine = null; phase = nextPhase;
   disposeEngine(previous);
 }
-function load(input, { save = true } = {}) {
+function load(input, { save = true, track = true } = {}) {
   if (practice.active) return;
   const nextGame = parseGame(input);
   importVersion++;
   cancelReview('idle');
   game = nextGame; ply = 0; side = selectedSide(game.headers);
+  trackGame = track; reportSignature = '';
   $('pgn').value = input;
   revealedPositions.clear();
   $('error').textContent = '';
   render();
-  void startReview();
   $('saveStatus').textContent = save ? 'Saving to local game history…' : '';
-  if (save) void historyUI.save(nextGame, input).then(result => {
+  currentGameSaved = save ? historyUI.save(nextGame, input) : Promise.resolve();
+  if (save) void currentGameSaved.then(result => {
     if (game === nextGame) $('saveStatus').textContent = result.duplicate ? 'This match is already in your history. No duplicate was added.' : 'Saved to game history in this browser.';
   }).catch(error => { if (game === nextGame) $('saveStatus').textContent = `${error.message} This review is available, but the game was not saved.`; });
+  void startReview();
 }
 async function startReview() {
   if (!game || practice.active) return;
   cancelReview('loading');
   const version = runVersion, target = game, quality = qualities[$('quality').value] || qualities.balanced;
+  lastReviewQuality = $('quality').value;
   const isCurrent = () => version === runVersion && game === target;
   let activeEngine = null;
   $('error').textContent = '';
@@ -137,7 +165,7 @@ async function startReview() {
         render();
       }
     }
-    if (isCurrent()) { phase = 'complete'; render(); }
+    if (isCurrent()) { phase = 'complete'; render(); recordCompletedReview(); }
   } catch (error) {
     if (isCurrent()) {
       phase = 'error';
@@ -204,9 +232,11 @@ function render() {
   $('copy').disabled = !game;
   renderEngine();
   hub.updateGame(game, phase);
+  coachProfile.setContext({ game, side:confirmedSide(), phase, track:trackGame });
 }
 function jump(nextPly) { if (practice.active) return; ply = Math.max(0, Math.min(game?.history.length || 0, nextPly)); render(); }
 $('tryMate').onclick = () => enterPractice();
+$('viewMyCoach').onclick = () => changeTab('coach');
 for (const name of tabs) {
   $(name + 'Tab').onclick = () => changeTab(name);
   $(name + 'Tab').onkeydown = event => {
@@ -228,14 +258,14 @@ $('pgnFile').onchange = async event => {
   } catch (error) { if (version === importVersion) $('error').textContent = error.message; }
   finally { event.target.value = ''; }
 };
-$('demo').onclick = () => { $('pgn').value = sample; $('player').value = 'auto'; try { load(sample, { save:false }); } catch (error) { $('error').textContent = error.message; } };
+$('demo').onclick = () => { $('pgn').value = sample; $('player').value = 'auto'; try { load(sample, { save:false, track:false }); } catch (error) { $('error').textContent = error.message; } };
 $('reviewAction').onclick = () => {
   if (!game || practice.active) return;
   if (phase === 'loading' || phase === 'running') { cancelReview(); render(); return; }
   if (phase === 'complete') game.analyses.fill(null);
   void startReview();
 };
-$('player').onchange = () => { if (practice.active) return; if (game) side = selectedSide(game.headers); else if ($('player').value !== 'auto') side = $('player').value; render(); };
+$('player').onchange = () => { if (practice.active) return; if (game) side = selectedSide(game.headers); else if ($('player').value !== 'auto') side = $('player').value; render(); recordCompletedReview(); };
 $('first').onclick = () => jump(0); $('prev').onclick = () => jump(ply - 1); $('next').onclick = () => jump(ply + 1); $('last').onclick = () => jump(game?.history.length || 0);
 $('seek').oninput = event => jump(Number(event.target.value));
 $('copy').onclick = async () => {

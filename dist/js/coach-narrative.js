@@ -63,6 +63,8 @@ function purpose(fen, token, view) {
   } catch { return null; }
 }
 
+export { purpose as describeMovePurpose };
+
 function replySentence(step, view) {
   if (!step) return null;
   const move = step.move, actor = capitalize(person(move.color, view));
