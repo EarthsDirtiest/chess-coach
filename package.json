@@ -1,0 +1,17 @@
+{
+  "name": "chess-coach",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "serve": "node scripts/serve.js",
+    "vendor:chess": "node scripts/vendor-chess.js",
+    "vendor:stockfish": "node scripts/vendor-stockfish.js",
+    "test:browser": "node scripts/browser-smoke.js"
+  },
+  "devDependencies": {
+    "chess.js": "1.4.0",
+    "playwright": "1.62.1"
+  }
+}

@@ -1,0 +1,166 @@
+import { parseGame, coachMove, summarizeGame, formatScore, terminalAnalysis } from './chess-review.js';
+import { StockfishEngine } from './stockfish-engine.js';
+import { sample } from './example-game.js';
+
+const $ = id => document.getElementById(id), FILES = 'abcdefgh';
+// Text presentation avoids mismatched emoji chess pieces on mobile.
+const ICON = { K:'♔︎', Q:'♕︎', R:'♖︎', B:'♗︎', N:'♘︎', P:'♙︎', k:'♚︎', q:'♛︎', r:'♜︎', b:'♝︎', n:'♞︎', p:'♟︎' };
+const start = () => ['rnbqkbnr','pppppppp','........','........','........','........','PPPPPPPP','RNBQKBNR'].map(row => row.split(''));
+const sideOf = piece => piece === piece.toUpperCase() ? 'white' : 'black';
+const qualities = { quick: { depth:16, moveTimeMs:350 }, balanced: { depth:18, moveTimeMs:700 }, deep: { depth:22, moveTimeMs:1500 } };
+let game = null, ply = 0, side = 'black', engine = null, runVersion = 0, phase = 'idle';
+
+function escapeHTML(value) {
+  return String(value ?? '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
+}
+function moveLabel(state) { return state.move ? `${state.moveNumber}${state.black ? '...' : '.'} ${state.san}` : 'Starting position'; }
+function selectedSide(headers) {
+  const choice = $('player').value;
+  if (choice !== 'auto') return choice;
+  return headers.White?.toLowerCase() === 'earthsdirtiest' ? 'white' : 'black';
+}
+function isOwn(state) { return Boolean(state.move) && state.black === (side === 'black'); }
+function disposeEngine(value) { if (value) value.dispose(); }
+function cancelReview(nextPhase = 'paused') {
+  runVersion++;
+  const previous = engine;
+  engine = null; phase = nextPhase;
+  disposeEngine(previous);
+}
+function load(input) {
+  const nextGame = parseGame(input);
+  cancelReview('idle');
+  game = nextGame; ply = 0; side = selectedSide(game.headers);
+  $('error').textContent = '';
+  render();
+  void startReview();
+}
+async function startReview() {
+  if (!game) return;
+  cancelReview('loading');
+  const version = runVersion, target = game, quality = qualities[$('quality').value] || qualities.balanced;
+  const isCurrent = () => version === runVersion && game === target;
+  let activeEngine = null;
+  $('error').textContent = '';
+  for (let i = 0; i < target.states.length; i++) {
+    if (!target.analyses[i]) target.analyses[i] = terminalAnalysis(target.states[i]);
+  }
+  render();
+  try {
+    if (target.analyses.some(value => !value)) {
+      activeEngine = new StockfishEngine(); engine = activeEngine;
+      await activeEngine.init();
+      if (!isCurrent()) return;
+      phase = 'running'; render();
+      for (let i = 0; i < target.states.length; i++) {
+        if (target.analyses[i]) continue;
+        const state = target.states[i];
+        const analysis = await activeEngine.analyze({ fen:state.fen, initialFen:target.initialFen, moves:state.uciMoves, ...quality });
+        if (!isCurrent()) return;
+        target.analyses[i] = analysis;
+        render();
+      }
+    }
+    if (isCurrent()) { phase = 'complete'; render(); }
+  } catch (error) {
+    if (isCurrent()) {
+      phase = 'error';
+      $('error').textContent = `Stockfish could not complete this review. ${error.message || String(error)} Completed positions are preserved; remaining moves are pending. You can retry.`;
+      render();
+    }
+  } finally {
+    disposeEngine(activeEngine);
+    if (isCurrent()) engine = null;
+  }
+}
+function renderEngine() {
+  const total = game?.states.length || 0, done = game?.analyses.filter(Boolean).length || 0;
+  const busy = phase === 'loading' || phase === 'running';
+  $('engineStatus').dataset.state = phase;
+  const progress = total ? `${done} / ${total} positions reviewed` : 'Load a game to start Stockfish.';
+  const prefixes = { loading:'Loading local Stockfish… ', running:'Stockfish analyzing… ', paused:'Review paused. ', complete:'Review complete. ', error:'Engine unavailable. ' };
+  $('engineStatus').textContent = (prefixes[phase] || '') + progress;
+  $('engineProgress').max = total || 1; $('engineProgress').value = done;
+  $('reviewAction').disabled = !game;
+  $('reviewAction').textContent = busy ? 'Stop review' : phase === 'complete' ? 'Reanalyze game' : phase === 'error' ? 'Retry remaining positions' : 'Resume review';
+}
+function render() {
+  const state = game?.states[ply] || { board:start(), ply:0, move:null };
+  const board = state.board, flip = side === 'black', coaching = game ? coachMove(game, ply) : null;
+  const boardFragment = document.createDocumentFragment();
+  for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+    const xx = flip ? 7 - x : x, yy = flip ? 7 - y : y, piece = board[yy][xx], square = document.createElement('div');
+    square.className = 'sq ' + ((x + y) % 2 ? 'dark' : 'light');
+    if (state.move && (state.move.from[0] === xx && state.move.from[1] === yy || state.move.to[0] === xx && state.move.to[1] === yy)) square.classList.add('last');
+    const name = FILES[xx] + (8 - yy);
+    if (coaching?.critical.includes(name)) square.classList.add('critical');
+    if (piece !== '.') {
+      const span = document.createElement('span');
+      span.className = 'piece ' + sideOf(piece); span.textContent = ICON[piece]; square.appendChild(span);
+    }
+    square.title = name; boardFragment.appendChild(square);
+  }
+  $('board').replaceChildren(boardFragment);
+  $('coords').innerHTML = (flip ? [...'hgfedcba'] : [...'abcdefgh']).map(file => `<span>${file}</span>`).join('');
+  const total = game?.history.length || 0;
+  $('step').textContent = `${ply} / ${total}`; $('seek').max = total; $('seek').value = ply;
+  for (const id of ['first','prev']) $(id).disabled = ply === 0;
+  for (const id of ['last','next']) $(id).disabled = ply === total;
+  $('positionTitle').textContent = moveLabel(state);
+  $('sideLabel').textContent = (side === 'black' ? 'Black' : 'White') + ' perspective';
+  $('gameTitle').textContent = game ? (game.headers.Event || 'GAME REVIEW') : 'YOUR BOARD';
+  const analysis = game?.analyses[ply];
+  $('evaluation').textContent = analysis ? formatScore(analysis.score) : 'Pending';
+  $('searchDepth').textContent = analysis ? (analysis.terminal ? 'Terminal position' : `Depth ${analysis.depth}`) : 'Awaiting Stockfish';
+  $('coach').innerHTML = coaching ? `<div class="row between"><div class="eyebrow">COACHING</div><span class="pill">${escapeHTML(coaching.level)}</span></div><h3>${escapeHTML(coaching.title)}</h3><p>${escapeHTML(coaching.body)}</p>${coaching.bestMoveSan ? `<div class="note"><strong>${ply ? 'Engine recommendation before this move' : 'Engine suggestion'}: ${escapeHTML(coaching.bestMoveSan)}</strong>${coaching.pvSan.length ? `<div class="continuation">${escapeHTML(coaching.pvSan.join(' '))}</div>` : ''}</div>` : ''}${isOwn(state) ? '<div class="review-note">Your move</div>' : ''}` : '<div class="eyebrow">YOUR PERSONAL COACH</div><h3>Load a PGN to begin</h3><p>Choose a move to see its engine evaluation and a continuation to study.</p>';
+  $('count').textContent = `${total} half-moves`;
+  if (game) {
+    const scrollTop = $('moves').scrollTop;
+    $('moves').innerHTML = game.states.slice(1).map(move => {
+      const c = coachMove(game, move.ply), pending = !game.analyses[move.ply - 1] || !game.analyses[move.ply];
+      const flagged = ['Mistake','Blunder'].includes(c.level);
+      return `<button class="move ${ply === move.ply ? 'selected' : ''} ${isOwn(move) ? 'own' : ''} ${pending ? 'pending' : ''} ${flagged ? 'flagged' : ''}" data-ply="${move.ply}" aria-current="${ply === move.ply ? 'step' : 'false'}" title="${escapeHTML((move.black ? 'Black' : 'White') + ': ' + c.level)}">${escapeHTML(moveLabel(move))}</button>`;
+    }).join('');
+    $('moves').scrollTop = scrollTop;
+    for (const button of $('moves').querySelectorAll('[data-ply]')) button.onclick = () => jump(Number(button.dataset.ply));
+    $('result').textContent = game.headers.Result || '*';
+    $('players').textContent = `${game.headers.White || 'White'} vs ${game.headers.Black || 'Black'}`;
+    const summary = summarizeGame(game, side), pending = summary.total - summary.reviewed;
+    $('reviewed').textContent = `${summary.reviewed} / ${summary.total} of your moves reviewed`;
+    $('priorities').innerHTML = `<div class="analysis-row"><strong>Engine mistakes</strong><span>${summary.mistakes} mistakes · ${summary.blunders} blunders among ${summary.reviewed} reviewed moves.</span></div><div class="analysis-row"><strong>Average evaluation loss</strong><span>${summary.averageLossCp == null ? 'Awaiting reviewed moves' : `${(summary.averageLossCp / 100).toFixed(2)} pawns (mate transitions excluded)`}. Estimates depend on search depth.</span></div><div class="analysis-row"><strong>${pending ? 'Review in progress' : 'Practice your alternatives'}</strong><span>${pending ? `${pending} of your moves are pending. They are excluded from these statistics.` : 'Revisit mistakes and compare the played move with the engine continuation.'}</span></div>`;
+  } else $('moves').innerHTML = '<div class="empty">Your move list will appear here.</div>';
+  $('copy').disabled = !game;
+  renderEngine();
+}
+function jump(nextPly) { ply = Math.max(0, Math.min(game?.history.length || 0, nextPly)); render(); }
+$('analyze').onclick = () => { try { load($('pgn').value); } catch (error) { $('error').textContent = error.message; } };
+$('demo').onclick = () => { $('pgn').value = sample; $('player').value = 'auto'; try { load(sample); } catch (error) { $('error').textContent = error.message; } };
+$('reviewAction').onclick = () => {
+  if (!game) return;
+  if (phase === 'loading' || phase === 'running') { cancelReview(); render(); return; }
+  if (phase === 'complete') game.analyses.fill(null);
+  void startReview();
+};
+$('player').onchange = () => { if (game) side = selectedSide(game.headers); else if ($('player').value !== 'auto') side = $('player').value; render(); };
+$('first').onclick = () => jump(0); $('prev').onclick = () => jump(ply - 1); $('next').onclick = () => jump(ply + 1); $('last').onclick = () => jump(game?.history.length || 0);
+$('seek').oninput = event => jump(Number(event.target.value));
+$('copy').onclick = async () => {
+  if (!game) return;
+  const summary = summarizeGame(game, side), completed = game.analyses.filter(Boolean);
+  const report = `Chess Coach / Stockfish review: ${game.headers.White || 'White'} vs ${game.headers.Black || 'Black'}\nReviewed side: ${side}\nPositions reviewed: ${completed.length} / ${game.states.length}; engine evaluations: ${completed.filter(analysis => !analysis.terminal).length}\nYour moves reviewed: ${summary.reviewed} / ${summary.total}; pending: ${summary.total - summary.reviewed}\nMistakes: ${summary.mistakes}; blunders: ${summary.blunders}\nEvaluations are from White's viewpoint and use finite search depth. Pending moves are excluded from statistics.\n\n` + game.states.filter(isOwn).map(state => {
+    const c = coachMove(game, state.ply), analysis = game.analyses[state.ply];
+    return `${moveLabel(state)} — ${c.level}: ${c.body}\nPosition evaluation: ${analysis ? formatScore(analysis.score) + '; depth ' + analysis.depth : 'Pending'}${c.bestMoveSan ? '\nEngine recommendation: ' + c.bestMoveSan : ''}${c.pvSan.length ? '\nContinuation: ' + c.pvSan.join(' ') : ''}`;
+  }).join('\n\n');
+  try { await navigator.clipboard.writeText(report); $('copy').textContent = 'Copied!'; setTimeout(() => $('copy').textContent = 'Copy coaching report', 1800); }
+  catch { $('error').textContent = 'Clipboard not available in this browser.'; }
+};
+document.addEventListener('keydown', event => {
+  if (['INPUT','TEXTAREA','SELECT','BUTTON'].includes(document.activeElement.tagName) || event.altKey || event.ctrlKey || event.metaKey) return;
+  if (event.key === 'ArrowRight') { event.preventDefault(); jump(ply + 1); }
+  if (event.key === 'ArrowLeft') { event.preventDefault(); jump(ply - 1); }
+});
+window.addEventListener('pagehide', () => {
+  if (phase === 'loading' || phase === 'running') cancelReview();
+});
+window.addEventListener('pageshow', () => render());
+render();
