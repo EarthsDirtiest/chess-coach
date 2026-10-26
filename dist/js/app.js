@@ -1,14 +1,35 @@
 import { parseGame, coachMove, summarizeGame, formatScore, terminalAnalysis } from './chess-review.js';
 import { StockfishEngine } from './stockfish-engine.js';
 import { sample } from './example-game.js';
+import { renderBoard } from './chess-board.js';
+import { getMateOpportunity } from './mate-practice.js';
+import { MatePracticeUI } from './mate-practice-ui.js';
 
-const $ = id => document.getElementById(id), FILES = 'abcdefgh';
-// Text presentation avoids mismatched emoji chess pieces on mobile.
-const ICON = { K:'♔︎', Q:'♕︎', R:'♖︎', B:'♗︎', N:'♘︎', P:'♙︎', k:'♚︎', q:'♛︎', r:'♜︎', b:'♝︎', n:'♞︎', p:'♟︎' };
+const $ = id => document.getElementById(id);
 const start = () => ['rnbqkbnr','pppppppp','........','........','........','........','PPPPPPPP','RNBQKBNR'].map(row => row.split(''));
-const sideOf = piece => piece === piece.toUpperCase() ? 'white' : 'black';
 const qualities = { quick: { depth:16, moveTimeMs:350 }, balanced: { depth:18, moveTimeMs:700 }, deep: { depth:22, moveTimeMs:1500 } };
 let game = null, ply = 0, side = 'black', engine = null, runVersion = 0, phase = 'idle';
+let reviewSnapshot = null;
+const revealedPositions = new Set();
+const practice = new MatePracticeUI({ onReturn:returnToReview });
+
+function enterPractice() {
+  if (practice.active || !game || !getMateOpportunity(game.states[ply], game.analyses[ply])) return;
+  reviewSnapshot = { ply, side, phase, resume:['loading', 'running'].includes(phase), scrollTop:$('moves').scrollTop,
+    details:$('engineDetails').open, pageY:window.scrollY };
+  cancelReview('paused');
+  try { practice.start({ initialFen:game.initialFen, moves:game.states[ply].uciMoves, analysis:game.analyses[ply] }); }
+  catch (error) { returnToReview(); $('error').textContent = error.message; }
+}
+function returnToReview({ resume = true } = {}) {
+  practice.close();
+  const saved = reviewSnapshot; reviewSnapshot = null;
+  if (!saved) { render(); return; }
+  ply = saved.ply; side = saved.side; phase = saved.resume ? 'paused' : saved.phase;
+  $('engineDetails').open = saved.details; render(); $('moves').scrollTop = saved.scrollTop;
+  $('tryMate').focus({ preventScroll:true }); window.scrollTo(0, saved.pageY);
+  if (saved.resume && resume) void startReview();
+}
 
 function escapeHTML(value) {
   return String(value ?? '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
@@ -33,15 +54,17 @@ function cancelReview(nextPhase = 'paused') {
   disposeEngine(previous);
 }
 function load(input) {
+  if (practice.active) return;
   const nextGame = parseGame(input);
   cancelReview('idle');
   game = nextGame; ply = 0; side = selectedSide(game.headers);
+  revealedPositions.clear();
   $('error').textContent = '';
   render();
   void startReview();
 }
 async function startReview() {
-  if (!game) return;
+  if (!game || practice.active) return;
   cancelReview('loading');
   const version = runVersion, target = game, quality = qualities[$('quality').value] || qualities.balanced;
   const isCurrent = () => version === runVersion && game === target;
@@ -90,23 +113,12 @@ function renderEngine() {
   $('reviewAction').textContent = busy ? 'Stop review' : phase === 'complete' ? 'Reanalyze game' : phase === 'error' ? 'Retry remaining positions' : 'Resume review';
 }
 function render() {
+  if (practice.active) { practice.render(); return; }
   const state = game?.states[ply] || { board:start(), ply:0, move:null };
-  const board = state.board, flip = side === 'black', coaching = game ? coachMove(game, ply, side) : null;
-  const boardFragment = document.createDocumentFragment();
-  for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
-    const xx = flip ? 7 - x : x, yy = flip ? 7 - y : y, piece = board[yy][xx], square = document.createElement('div');
-    square.className = 'sq ' + ((x + y) % 2 ? 'dark' : 'light');
-    if (state.move && (state.move.from[0] === xx && state.move.from[1] === yy || state.move.to[0] === xx && state.move.to[1] === yy)) square.classList.add('last');
-    const name = FILES[xx] + (8 - yy);
-    if (coaching?.critical.includes(name)) square.classList.add('critical');
-    if (piece !== '.') {
-      const span = document.createElement('span');
-      span.className = 'piece ' + sideOf(piece); span.textContent = ICON[piece]; square.appendChild(span);
-    }
-    square.title = name; boardFragment.appendChild(square);
-  }
-  $('board').replaceChildren(boardFragment);
-  $('coords').innerHTML = (flip ? [...'hgfedcba'] : [...'abcdefgh']).map(file => `<span>${file}</span>`).join('');
+  const coaching = game ? coachMove(game, ply, side) : null;
+  const opportunity = getMateOpportunity(state, game?.analyses[ply]), hiddenMate = opportunity && !revealedPositions.has(ply);
+  renderBoard({ element:$('board'), coords:$('coords'), board:state.board, perspective:side, lastMove:state.move,
+    critical:hiddenMate ? [] : coaching?.critical });
   const total = game?.history.length || 0;
   $('step').textContent = `${ply} / ${total}`; $('seek').max = total; $('seek').value = ply;
   for (const id of ['first','prev']) $(id).disabled = ply === 0;
@@ -118,6 +130,11 @@ function render() {
   $('evaluation').textContent = analysis ? formatScore(analysis.score) : 'Pending';
   $('searchDepth').textContent = analysis ? (analysis.terminal ? 'Terminal position' : `Depth ${analysis.depth}`) : 'Awaiting Stockfish';
   $('coach').innerHTML = coaching ? `<div class="row between"><div class="eyebrow">COACHING</div><span class="pill">${escapeHTML(coaching.level)}</span></div><h3>${escapeHTML(coaching.title)}</h3><p>${escapeHTML(coaching.body)}</p>${coaching.bestMoveSan ? `<div class="note"><strong>${recommendationLabel(state)}: ${escapeHTML(coaching.bestMoveSan)}</strong>${coaching.pvSan.length ? `<div class="continuation">${escapeHTML(coaching.pvSan.join(' '))}</div>` : ''}</div>` : ''}${isOwn(state) ? '<div class="review-note">Your move</div>' : ''}` : '<div class="eyebrow">YOUR PERSONAL COACH</div><h3>Load a PGN to begin</h3><p>Choose a move to learn what it changed, spot a danger, and explore another idea.</p>';
+  $('tryMate').hidden = !opportunity;
+  if (hiddenMate) {
+    $('coach').innerHTML = `<div class="mate-teaser"><div class="eyebrow">A CHECKMATE TO FIND</div><h3>Can you finish the attack?</h3><p>There is a forced mate for ${opportunity.attacker === 'white' ? 'White' : 'Black'} in this position. Try it on the board, or reveal the coaching when you need it.</p><button class="secondary" id="revealMateAnalysis">Show analysis and solution</button></div>`;
+    $('revealMateAnalysis').onclick = () => { revealedPositions.add(ply); render(); };
+  }
   $('count').textContent = `${total} half-moves`;
   if (game) {
     const scrollTop = $('moves').scrollTop;
@@ -139,16 +156,17 @@ function render() {
   $('copy').disabled = !game;
   renderEngine();
 }
-function jump(nextPly) { ply = Math.max(0, Math.min(game?.history.length || 0, nextPly)); render(); }
+function jump(nextPly) { if (practice.active) return; ply = Math.max(0, Math.min(game?.history.length || 0, nextPly)); render(); }
+$('tryMate').onclick = enterPractice;
 $('analyze').onclick = () => { try { load($('pgn').value); } catch (error) { $('error').textContent = error.message; } };
 $('demo').onclick = () => { $('pgn').value = sample; $('player').value = 'auto'; try { load(sample); } catch (error) { $('error').textContent = error.message; } };
 $('reviewAction').onclick = () => {
-  if (!game) return;
+  if (!game || practice.active) return;
   if (phase === 'loading' || phase === 'running') { cancelReview(); render(); return; }
   if (phase === 'complete') game.analyses.fill(null);
   void startReview();
 };
-$('player').onchange = () => { if (game) side = selectedSide(game.headers); else if ($('player').value !== 'auto') side = $('player').value; render(); };
+$('player').onchange = () => { if (practice.active) return; if (game) side = selectedSide(game.headers); else if ($('player').value !== 'auto') side = $('player').value; render(); };
 $('first').onclick = () => jump(0); $('prev').onclick = () => jump(ply - 1); $('next').onclick = () => jump(ply + 1); $('last').onclick = () => jump(game?.history.length || 0);
 $('seek').oninput = event => jump(Number(event.target.value));
 $('copy').onclick = async () => {
@@ -162,11 +180,13 @@ $('copy').onclick = async () => {
   catch { $('error').textContent = 'Clipboard not available in this browser.'; }
 };
 document.addEventListener('keydown', event => {
+  if (practice.active) return;
   if (['INPUT','TEXTAREA','SELECT','BUTTON'].includes(document.activeElement.tagName) || event.altKey || event.ctrlKey || event.metaKey) return;
   if (event.key === 'ArrowRight') { event.preventDefault(); jump(ply + 1); }
   if (event.key === 'ArrowLeft') { event.preventDefault(); jump(ply - 1); }
 });
 window.addEventListener('pagehide', () => {
+  if (practice.active) returnToReview({ resume:false });
   if (phase === 'loading' || phase === 'running') cancelReview();
 });
 window.addEventListener('pageshow', () => render());

@@ -32,6 +32,7 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   const url = `http://127.0.0.1:${server.address().port}${prefix}`;
   await page.goto(url);
+  assert.equal(await page.locator('#tryMate').isVisible(), false);
   assert.equal(await page.$eval('#engineDetails', element => element.open), false);
   assert.equal(await page.locator('#evaluation').isVisible(), false);
   const tactical = await page.evaluate(async () => {
@@ -59,12 +60,40 @@ try {
   await waitForPhase('complete');
   assert.match(await page.textContent('#reviewed'), /2 \/ 2/);
   await page.click('[data-ply="3"]');
+  assert.equal(await page.locator('#tryMate').isVisible(), true);
+  assert.doesNotMatch(await page.textContent('#coach'), /Qh4/);
+  await page.click('#engineDetails summary');
+  const originalBoard = await page.locator('#board').textContent(), originalMoves = await page.locator('#moves').textContent();
+  await page.click('#tryMate');
+  assert.equal(await page.textContent('#sideLabel'), 'You play Black');
+  assert.equal(await page.locator('#practiceSolution').isVisible(), false);
+  assert.equal(await page.textContent('#practiceSolution'), '');
+  assert.equal(await page.locator('#moves').isVisible(), false);
+  await page.keyboard.press('ArrowRight');
+  assert.equal(await page.textContent('#step'), '3 / 4');
+  await page.click('[data-square="d8"]'); await page.click('[data-square="h4"]');
+  assert.equal(await page.getAttribute('#practicePanel', 'data-state'), 'won');
+  assert.match(await page.textContent('#practiceStatus'), /Checkmate!/);
+  await page.click('#practiceUndo');
+  assert.equal(await page.getAttribute('#practicePanel', 'data-state'), 'player');
+  await page.click('#practiceSolutionToggle');
+  assert.match(await page.textContent('#practiceSolution'), /Qh4#/);
+  await page.click('#practiceRestart');
+  assert.equal(await page.locator('#practiceSolution').isVisible(), false);
+  assert.equal(await page.textContent('#practiceSolution'), '');
+  await page.click('#practiceReturn');
+  assert.equal(await page.textContent('#step'), '3 / 4');
+  assert.equal(await page.textContent('#sideLabel'), 'White perspective');
+  assert.equal(await page.locator('#board').textContent(), originalBoard);
+  assert.equal(await page.locator('#moves').textContent(), originalMoves);
+  assert.equal(await page.$eval('#engineDetails', element => element.open), true);
+  assert.doesNotMatch(await page.textContent('#coach'), /Qh4/);
+  await page.click('#revealMateAnalysis');
   assert.match(await page.textContent('#coach'), /Blunder/);
   assert.match(await page.textContent('#coach'), /checkmating your king/);
   assert.doesNotMatch(await page.textContent('#coach p'), /Stockfish|evaluation|searched depth|first choice/i);
   assert.equal(await page.textContent('#evaluation'), '−M1');
   assert.match(await page.textContent('#searchDepth'), /Depth \d+/);
-  await page.click('#engineDetails summary');
   assert.equal(await page.locator('#evaluation').isVisible(), true);
   await page.click('#last');
   assert.equal(await page.$eval('#engineDetails', element => element.open), true);
@@ -118,6 +147,87 @@ try {
   await page.screenshot({ path:'test-results/mobile.png', fullPage:true });
   assert.deepEqual(errors, []);
   console.log('UI review, coaching, export, pause/resume, replacement, reanalysis, and mobile layout passed.');
+
+  // A mate in two has two valid first moves. Accept the alternative and play a real defense.
+  await page.setViewportSize({ width:1280, height:900 });
+  await page.selectOption('#quality', 'quick');
+  await page.fill('#pgn', '[SetUp "1"]\n[FEN "8/8/8/8/8/3K4/4Q3/k7 w - - 0 1"]\n\n1. Kc2 Ka2 2. Qa6#');
+  await page.click('#analyze'); await waitForPhase('complete');
+  await page.click('#tryMate');
+  await page.click('[data-square="d3"]'); await page.click('[data-square="c3"]');
+  await page.waitForFunction(() => document.querySelector('#practicePanel').dataset.state === 'player');
+  assert.match(await page.locator('[data-square="b1"]').getAttribute('aria-label'), /black king/);
+  await page.click('[data-square="e2"]'); await page.click('[data-square="b2"]');
+  assert.equal(await page.getAttribute('#practicePanel', 'data-state'), 'won');
+  await page.click('#practiceUndo');
+  assert.match(await page.locator('[data-square="e2"]').getAttribute('aria-label'), /white queen/);
+  await page.click('#practiceUndo');
+  assert.match(await page.locator('[data-square="d3"]').getAttribute('aria-label'), /white king/);
+  await page.click('#practiceSolutionToggle');
+  assert.match(await page.textContent('#practiceSolution'), /#/);
+  await mkdir('test-results', { recursive:true });
+  await page.click('#practiceSolutionToggle');
+  await page.screenshot({ path:'test-results/mate-practice-desktop.png', fullPage:true });
+  await page.setViewportSize({ width:390, height:844 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await page.screenshot({ path:'test-results/mate-practice-mobile.png', fullPage:true });
+  await page.click('[data-square="d3"]'); await page.click('[data-square="c3"]');
+  // Return before initialization/search completes: no late defensive reply may replace review.
+  await page.click('#practiceReturn');
+  await page.waitForTimeout(1200);
+  assert.equal(await page.textContent('#step'), '0 / 3');
+  assert.equal(await page.locator('#practicePanel').isVisible(), false);
+  assert.equal(await page.locator('#board button').count(), 0);
+
+  // Entering during review pauses its worker; leaving resumes at the same review position.
+  // Tiny tablebase-like mate positions can finish instantly, so hold each search briefly.
+  await page.evaluate(async () => {
+    const { StockfishEngine } = await import('./js/stockfish-engine.js');
+    window.originalAnalyze = StockfishEngine.prototype.analyze;
+    StockfishEngine.prototype.analyze = async function (options) {
+      await new Promise(resolve => setTimeout(resolve, 400)); return window.originalAnalyze.call(this, options);
+    };
+  });
+  await page.selectOption('#quality', 'deep');
+  await page.click('#reviewAction');
+  await page.waitForFunction(() => !document.querySelector('#tryMate').hidden && document.querySelector('#engineStatus').dataset.state === 'running');
+  const reviewedBeforePractice = await page.$eval('#engineProgress', element => element.value);
+  await page.click('#tryMate'); await page.waitForTimeout(300);
+  assert.equal(await page.$eval('#engineProgress', element => element.value), reviewedBeforePractice);
+  await page.click('#practiceReturn'); await waitForPhase('complete');
+  await page.evaluate(async () => { const { StockfishEngine } = await import('./js/stockfish-engine.js'); StockfishEngine.prototype.analyze = window.originalAnalyze; });
+  assert.equal(await page.textContent('#step'), '0 / 3');
+  assert.equal(await page.locator('#board button').count(), 0);
+
+  // Defender moves first, even though the reviewer selected Black and the winning side is White.
+  await page.selectOption('#quality', 'quick');
+  await page.selectOption('#player', 'black');
+  await page.fill('#pgn', '[SetUp "1"]\n[FEN "8/8/8/8/8/2K5/4Q3/k7 b - - 1 1"]\n\n1... Kb1 2. Qb2#');
+  await page.click('#analyze'); await waitForPhase('complete');
+  await page.click('#tryMate');
+  await page.waitForFunction(() => document.querySelector('#practicePanel').dataset.state === 'player');
+  assert.equal(await page.textContent('#sideLabel'), 'You play White');
+  assert.match(await page.locator('[data-square="b1"]').getAttribute('aria-label'), /black king/);
+  await page.click('#practiceReturn');
+  assert.equal(await page.textContent('#sideLabel'), 'Black perspective');
+  await page.click('#last'); assert.equal(await page.locator('#tryMate').isVisible(), false);
+
+  await page.fill('#pgn', '[SetUp "1"]\n[FEN "7k/5P2/6K1/8/8/8/8/8 w - - 0 1"]\n\n1. f8=Q#');
+  await page.click('#analyze'); await waitForPhase('complete'); await page.click('#tryMate');
+  await page.locator('[data-square="f7"]').focus(); await page.keyboard.press('Enter');
+  await page.locator('[data-square="f8"]').focus(); await page.keyboard.press('Enter');
+  assert.equal(await page.locator('#practicePromotion').isVisible(), true);
+  await page.click('[data-promotion="r"]');
+  assert.equal(await page.getAttribute('#practicePanel', 'data-state'), 'won');
+  await page.click('#practiceRestart');
+  await page.evaluate(() => {
+    window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted:true }));
+    window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted:true }));
+  });
+  assert.equal(await page.locator('#practicePanel').isVisible(), false);
+  assert.equal(await page.textContent('#step'), '0 / 1');
+  assert.deepEqual(errors, []);
+  console.log('Mate practice: both colors, alternative mating move, real defense, hidden/revealed solution, undo, promotion, return, review resume, lifecycle and mobile layout passed.');
   await context.close();
 
   const failedContext = await browser.newContext();
