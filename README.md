@@ -37,6 +37,15 @@ Node installation: deploy the committed `dist/` directory.
   after it, from the mover's perspective. Best-move matches are not penalized
   for search fluctuations. Coaching includes the engine's alternative and
   legal SAN continuation. No move is graded until both positions are evaluated.
+- Coaching uses plain language: what the move allowed, a concrete reason to
+  consider another move, and a practical habit to remember. Reasons come from
+  legal moves and board facts, including captures, checks, development, center
+  control and open files. The coach does not invent a tactical explanation for
+  an unexplained score change. Recaptures, equal exchanges, pinned pieces and
+  sound sacrifices are checked before describing a problem. Selecting your side
+  changes the wording so your opponent's moves are not attributed to you.
+- Scores, search depth and average evaluation loss sit in a collapsed
+  **Show engine details** panel; the main note focuses on the chess lesson.
 - Estimated losses of 0.50 / 1.00 / 2.00 pawns are labeled inaccuracy / mistake /
   blunder. Losing a found forced mate or allowing a new one is a blunder. Mate
   transitions are excluded from average centipawn loss. These are teaching

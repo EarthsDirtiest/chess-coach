@@ -1,4 +1,5 @@
 import { Chess } from '../vendor/chess.js/chess.js';
+import { writeCoachNote } from './coach-narrative.js';
 
 const coordinates = square => ['abcdefgh'.indexOf(square[0]), 8 - Number(square[1])];
 const pieceChar = (type, color) => color === 'w' ? type.toUpperCase() : type;
@@ -144,28 +145,29 @@ export function lineToSan(fen, line = [], limit = 8) {
 }
 
 const coachCache = new WeakMap();
-export function coachMove(game, ply) {
+export function coachMove(game, ply, viewSide = null) {
   let cache = coachCache.get(game);
-  if (!cache) { cache = []; coachCache.set(game, cache); }
-  const before = game.analyses[Math.max(0, ply - 1)], after = game.analyses[ply], entry = cache[ply];
+  if (!cache) { cache = {}; coachCache.set(game, cache); }
+  const key = `${ply}:${viewSide || 'neutral'}`;
+  const before = game.analyses[Math.max(0, ply - 1)], after = game.analyses[ply], entry = cache[key];
   if (entry && entry.before === before && entry.after === after) return entry.value;
-  const value = calculateCoachMove(game, ply);
-  cache[ply] = { before, after, value };
+  const value = calculateCoachMove(game, ply, viewSide);
+  cache[key] = { before, after, value };
   return value;
 }
 
-function calculateCoachMove(game, ply) {
+function calculateCoachMove(game, ply, viewSide) {
   const state = game.states[ply], before = game.analyses[Math.max(0, ply - 1)], after = game.analyses[ply];
   const title = ply ? `${state.moveNumber}${state.black ? '...' : '.'} ${state.san}` : 'Starting position';
   const outcome = state.checkmate ? 'Checkmate' : state.drawReason ? 'Draw' : null;
   const drawClaim = state.claimableDrawReason ? ` ${state.turn === 'white' ? 'White' : 'Black'} can claim a draw by ${state.claimableDrawReason}; play may continue if no claim is made.` : '';
   const base = { title, outcome, critical: [], bestMoveSan: null, pvSan: [], lossCp: null };
   if (!ply) {
-    if (!after?.score) return { ...base, level: 'Pending', body: 'Stockfish has not evaluated the starting position yet.' + drawClaim };
+    if (!after?.score) return { ...base, level: 'Pending', body: 'I’m checking the game. You can already move through the board while I work.' + drawClaim };
     const pvSan = lineToSan(state.fen, after.pv);
-    return { ...base, pvSan, bestMoveSan: pvSan[0] || null, level: 'Position', body: `Stockfish evaluates this position as ${formatScore(after.score)} from White’s perspective. Choose a move to compare it with the engine’s recommendation.` + drawClaim };
+    return { ...base, pvSan, bestMoveSan: pvSan[0] || null, level: 'Position', body: 'Let’s walk through the game together. Pick a move and we’ll look at what it allowed, what worked, and what to try next time.' + drawClaim };
   }
-  if (!before?.score || !after?.score) return { ...base, level: 'Pending', body: 'Awaiting Stockfish analysis of the positions before and after this move. Keep exploring the board while the review runs.' + drawClaim };
+  if (!before?.score || !after?.score) return { ...base, level: 'Pending', body: 'I’m still checking this move and the replies. Keep exploring the board; I’ll add the coaching when the calculation is ready.' + drawClaim };
   const mover = state.black ? 'black' : 'white';
   const pvSan = lineToSan(game.states[ply - 1].fen, before.pv);
   const bestMoveSan = lineToSan(game.states[ply - 1].fen, before.bestMove ? [before.bestMove] : [])[0] || null;
@@ -174,35 +176,10 @@ function calculateCoachMove(game, ply) {
   const allowsMate = mateWinner(after.score) && mateWinner(after.score) !== mover && mateWinner(before.score) !== mateWinner(after.score);
   const best = before.bestMove === state.move.uci;
   let level = best ? 'Best move' : lostMate || allowsMate || lossCp >= 200 ? 'Blunder' : lossCp >= 100 ? 'Mistake' : lossCp >= 50 ? 'Inaccuracy' : 'Good move';
-  const sentences = [];
-  if (best) sentences.push('You played Stockfish’s first choice at the searched depth.');
-  else if (allowsMate) sentences.push('This move allows a forced checkmate in Stockfish’s searched line.');
-  else if (lostMate) sentences.push('Stockfish found a forced mate before this move; that mate is no longer found after your choice.');
-  else if (lossCp >= 50) sentences.push(`This move gives up about ${(lossCp / 100).toFixed(2)} pawns of evaluation compared with the position before it.`);
-  else sentences.push('This move keeps the evaluation close to Stockfish’s preferred play at this search depth.');
-  if (bestMoveSan && !best) sentences.push(`Consider ${bestMoveSan} instead. Replay the calculated line to compare the responses.`);
-  if (state.checkmate) { level = 'Checkmate'; sentences.push(`${mover === 'white' ? 'White' : 'Black'} delivers checkmate.`); }
-  else if (state.drawReason) { if (!['Blunder', 'Mistake', 'Inaccuracy'].includes(level)) level = 'Draw'; sentences.push(`This position is drawn by ${state.drawReason}.`); }
-  else {
-    const token = after.pv?.[0];
-    if (token) {
-      try {
-        const position = new Chess(state.fen);
-        const reply = position.move({ from:token.slice(0, 2), to:token.slice(2, 4), promotion:token[4] });
-        const names = { p:'pawn', n:'knight', b:'bishop', r:'rook', q:'queen' }, facts = [];
-        if (reply.captured) facts.push(`capturing the ${names[reply.captured]}`);
-        if (position.isCheckmate()) facts.push('delivering checkmate');
-        else if (position.isCheck()) facts.push('giving check');
-        if (reply.promotion) facts.push(`promoting to a ${names[reply.promotion]}`);
-        sentences.push(`The opponent’s best calculated reply is ${reply.san}${facts.length ? ', ' + facts.join(' and ') : ''}.`);
-      } catch { /* Describe only legal moves in the engine's principal variation. */ }
-    }
-    if (state.move.promoted) sentences.push('Your pawn promotes in this position.');
-    else if (state.check) sentences.push('Your move gives check, so the opponent must answer it.');
-  }
-  if (drawClaim) sentences.push(drawClaim.trim());
-  sentences.push(`Evaluation: ${formatScore(before.score)} → ${formatScore(after.score)} (White’s perspective).`);
-  return { ...base, level, body: sentences.join(' '), bestMoveSan, pvSan, lossCp };
+  if (state.checkmate) level = 'Checkmate';
+  else if (state.drawReason && !['Blunder', 'Mistake', 'Inaccuracy'].includes(level)) level = 'Draw';
+  const body = writeCoachNote({ previousFen:game.states[ply - 1].fen, state, before, after, level, lostMate, allowsMate, viewSide });
+  return { ...base, level, body, bestMoveSan, pvSan, lossCp };
 }
 
 export function summarizeGame(game, side) {

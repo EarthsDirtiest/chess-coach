@@ -32,6 +32,8 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   const url = `http://127.0.0.1:${server.address().port}${prefix}`;
   await page.goto(url);
+  assert.equal(await page.$eval('#engineDetails', element => element.open), false);
+  assert.equal(await page.locator('#evaluation').isVisible(), false);
   const tactical = await page.evaluate(async () => {
     const { StockfishEngine } = await import('./js/stockfish-engine.js');
     const engine = new StockfishEngine();
@@ -58,14 +60,19 @@ try {
   assert.match(await page.textContent('#reviewed'), /2 \/ 2/);
   await page.click('[data-ply="3"]');
   assert.match(await page.textContent('#coach'), /Blunder/);
-  assert.match(await page.textContent('#coach'), /delivering checkmate/);
+  assert.match(await page.textContent('#coach'), /checkmating your king/);
+  assert.doesNotMatch(await page.textContent('#coach p'), /Stockfish|evaluation|searched depth|first choice/i);
   assert.equal(await page.textContent('#evaluation'), '−M1');
   assert.match(await page.textContent('#searchDepth'), /Depth \d+/);
+  await page.click('#engineDetails summary');
+  assert.equal(await page.locator('#evaluation').isVisible(), true);
   await page.click('#last');
+  assert.equal(await page.$eval('#engineDetails', element => element.open), true);
   assert.equal(await page.textContent('#evaluation'), 'Black wins by mate');
   const beforeSideChange = await page.$eval('#engineProgress', element => element.value);
   await page.selectOption('#player', 'black');
   assert.equal(await page.textContent('#sideLabel'), 'Black perspective');
+  assert.match(await page.textContent('#coach'), /Well spotted/);
   assert.equal(await page.$eval('#engineProgress', element => element.value), Number(beforeSideChange));
   await page.evaluate(() => { navigator.clipboard.writeText = async value => { window.copiedReport = value; }; });
   await page.click('#copy');
@@ -103,6 +110,7 @@ try {
   await page.click('#analyze');
   assert.match(await page.textContent('#error'), /Could not read/);
   assert.equal(await page.locator('[data-ply]').count(), 1);
+  await page.click('#engineDetails summary');
   await mkdir('test-results', { recursive:true });
   await page.screenshot({ path:'test-results/desktop.png', fullPage:true });
   await page.setViewportSize({ width:390, height:844 });
