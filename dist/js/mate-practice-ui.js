@@ -1,5 +1,6 @@
 import { MatePractice } from './mate-practice.js';
 import { renderBoard } from './chess-board.js';
+import { LinePractice } from './line-practice.js';
 
 const $ = id => document.getElementById(id);
 const title = side => side === 'white' ? 'White' : 'Black';
@@ -23,10 +24,12 @@ export class MatePracticeUI {
     };
   }
   get active() { return Boolean(this.session); }
-  start({ title = 'Find the checkmate', returnLabel = 'Return to review', ...options }) {
+  start({ title = 'Find the checkmate', returnLabel = 'Return to review', drill = null, ...options }) {
     this.close(); this.resetInput();
     this.title = title; this.returnLabel = returnLabel;
-    this.session = new MatePractice({ ...options, onChange:() => this.render() });
+    this.kind = drill?.kind || 'mate';
+    this.session = ['opening', 'puzzle'].includes(this.kind) ? new LinePractice({ drill, onChange:() => this.render() })
+      : new MatePractice({ ...options, onChange:() => this.render() });
     document.body.classList.add('practice-mode'); $('practicePanel').hidden = false;
     // Do not leave the original game's continuation in the visible practice screen.
     $('coach').replaceChildren(); $('moves').replaceChildren();
@@ -59,7 +62,11 @@ export class MatePracticeUI {
     if (!this.session) return;
     const state = this.session.state, busy = ['loading', 'thinking'].includes(state.status);
     $('practicePanel').dataset.state = state.status;
-    $('gameTitle').textContent = 'CHECKMATE PRACTICE'; $('positionTitle').textContent = this.title;
+    $('gameTitle').textContent = this.kind === 'opening' ? 'OPENING PRACTICE' : this.kind === 'puzzle' ? 'PUZZLE PRACTICE' : 'CHECKMATE PRACTICE';
+    $('positionTitle').textContent = this.title;
+    $('practiceTitle').textContent = this.kind === 'opening' ? 'Build the opening' : this.kind === 'puzzle' ? 'Find the tactic' : 'Find the checkmate';
+    $('practiceInstruction').hidden = !state.instruction;
+    $('practiceInstruction').textContent = state.instruction || '';
     $('practiceReturn').textContent = this.returnLabel;
     $('sideLabel').textContent = `You play ${title(state.attacker)}`;
     $('practiceStatus').textContent = state.message;
@@ -69,7 +76,7 @@ export class MatePracticeUI {
     $('practiceSolutionToggle').setAttribute('aria-expanded', String(this.showSolution));
     $('practiceSolution').hidden = !this.showSolution;
     $('practiceSolution').textContent = this.showSolution ? state.solution?.length
-      ? `${state.solutionComplete ? 'One mating line from here' : 'Calculated continuation (the full mate was not resolved)'}: ${state.solution.join(' ')}`
+      ? `${this.kind !== 'mate' ? 'Practice line from here' : state.solutionComplete ? 'One mating line from here' : 'Calculated continuation (the full mate was not resolved)'}: ${state.solution.join(' ')}`
       : busy ? 'Calculating…' : 'No forced mating line was found here. Undo your move or start again to see the original solution.' : '';
     $('practicePromotion').hidden = !this.promotion;
     for (const button of $('practicePromotion').querySelectorAll('[data-promotion]')) button.disabled = !this.promotion?.some(move => move.promotion === button.dataset.promotion);

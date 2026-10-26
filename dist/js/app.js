@@ -5,6 +5,7 @@ import { renderBoard } from './chess-board.js';
 import { getMateOpportunity } from './mate-practice.js';
 import { MatePracticeUI } from './mate-practice-ui.js';
 import { PracticeHub } from './practice-hub.js';
+import { GameHistoryUI } from './game-history-ui.js';
 
 const $ = id => document.getElementById(id);
 const start = () => ['rnbqkbnr','pppppppp','........','........','........','........','PPPPPPPP','RNBQKBNR'].map(row => row.split(''));
@@ -12,14 +13,20 @@ const qualities = { quick: { depth:16, moveTimeMs:350 }, balanced: { depth:18, m
 let game = null, ply = 0, side = 'black', engine = null, runVersion = 0, phase = 'idle';
 let reviewSnapshot = null;
 let activeTab = 'review';
-const tabScroll = { review:0, practice:0 };
+let importVersion = 0;
+const tabScroll = { review:0, practice:0, history:0 };
+const tabs = ['review', 'practice', 'history'];
 const revealedPositions = new Set();
 const practice = new MatePracticeUI({ onReturn:returnToReview });
 const hub = new PracticeHub({ onStart:options => enterPractice({ ...options, origin:'practice' }), onReview:() => changeTab('review') });
+const historyUI = new GameHistoryUI({ onOpen:record => {
+  try { load(record.pgn, { save:false }); changeTab('review'); $('saveStatus').textContent = 'Opened from game history. Stockfish is reviewing the saved PGN.'; }
+  catch (error) { $('historyError').textContent = `This saved game could not be opened: ${error.message}`; }
+} });
 
 function activateTab(tab) {
   activeTab = tab;
-  for (const name of ['review', 'practice']) {
+  for (const name of tabs) {
     const selected = name === tab;
     $(name + 'Tab').setAttribute('aria-selected', String(selected)); $(name + 'Tab').tabIndex = selected ? 0 : -1;
     $(name + 'View').hidden = !selected;
@@ -29,6 +36,7 @@ function changeTab(tab) {
   if (practice.active) { returnToReview({ destination:tab }); return; }
   if (activeTab === tab) return;
   tabScroll[activeTab] = window.scrollY; activateTab(tab); window.scrollTo(0, tabScroll[tab]);
+  if (tab === 'history') void historyUI.refresh();
 }
 function enterPractice({ drill = null, positionPly = ply, origin = 'review', focusId = 'tryMate' } = {}) {
   if (practice.active) return;
@@ -44,7 +52,7 @@ function enterPractice({ drill = null, positionPly = ply, origin = 'review', foc
     activateTab('practice');
   }
   try {
-    practice.start({ initialFen:drill?.fen || game.initialFen, moves:drill ? [] : state.uciMoves, analysis,
+    practice.start({ drill, initialFen:drill ? drill.fen : game.initialFen, moves:drill ? [] : state.uciMoves, analysis,
       title:drill?.title || 'Find the checkmate', returnLabel:origin === 'practice' ? 'Return to practices' : 'Return to review' });
     window.scrollTo(0, 0);
   }
@@ -87,15 +95,21 @@ function cancelReview(nextPhase = 'paused') {
   engine = null; phase = nextPhase;
   disposeEngine(previous);
 }
-function load(input) {
+function load(input, { save = true } = {}) {
   if (practice.active) return;
   const nextGame = parseGame(input);
+  importVersion++;
   cancelReview('idle');
   game = nextGame; ply = 0; side = selectedSide(game.headers);
+  $('pgn').value = input;
   revealedPositions.clear();
   $('error').textContent = '';
   render();
   void startReview();
+  $('saveStatus').textContent = save ? 'Saving to local game history…' : '';
+  if (save) void historyUI.save(nextGame, input).then(result => {
+    if (game === nextGame) $('saveStatus').textContent = result.duplicate ? 'This match is already in your history. No duplicate was added.' : 'Saved to game history in this browser.';
+  }).catch(error => { if (game === nextGame) $('saveStatus').textContent = `${error.message} This review is available, but the game was not saved.`; });
 }
 async function startReview() {
   if (!game || practice.active) return;
@@ -193,17 +207,28 @@ function render() {
 }
 function jump(nextPly) { if (practice.active) return; ply = Math.max(0, Math.min(game?.history.length || 0, nextPly)); render(); }
 $('tryMate').onclick = () => enterPractice();
-for (const name of ['review', 'practice']) {
+for (const name of tabs) {
   $(name + 'Tab').onclick = () => changeTab(name);
   $(name + 'Tab').onkeydown = event => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
     event.preventDefault();
-    const next = event.key === 'Home' ? 'review' : event.key === 'End' ? 'practice' : activeTab === 'review' ? 'practice' : 'review';
+    const next = event.key === 'Home' ? tabs[0] : event.key === 'End' ? tabs.at(-1)
+      : tabs[(tabs.indexOf(activeTab) + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
     changeTab(next); $(next + 'Tab').focus();
   };
 }
 $('analyze').onclick = () => { try { load($('pgn').value); } catch (error) { $('error').textContent = error.message; } };
-$('demo').onclick = () => { $('pgn').value = sample; $('player').value = 'auto'; try { load(sample); } catch (error) { $('error').textContent = error.message; } };
+$('uploadPgn').onclick = () => $('pgnFile').click();
+$('pgnFile').onchange = async event => {
+  const file = event.target.files?.[0]; if (!file) return;
+  const version = ++importVersion;
+  try {
+    if (file.size > 200000) throw new Error('This PGN is too large. Upload one game under 200 KB.');
+    const input = await file.text(); if (version !== importVersion) return; load(input);
+  } catch (error) { if (version === importVersion) $('error').textContent = error.message; }
+  finally { event.target.value = ''; }
+};
+$('demo').onclick = () => { $('pgn').value = sample; $('player').value = 'auto'; try { load(sample, { save:false }); } catch (error) { $('error').textContent = error.message; } };
 $('reviewAction').onclick = () => {
   if (!game || practice.active) return;
   if (phase === 'loading' || phase === 'running') { cancelReview(); render(); return; }

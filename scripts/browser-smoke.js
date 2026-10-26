@@ -3,6 +3,7 @@ import http from 'node:http';
 import { readFile, mkdir } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
 import { chromium } from 'playwright';
+import { openingDrills, puzzleDrills } from '../dist/js/practice-library.js';
 
 // Serve beneath a project path, as GitHub Pages does, to catch absolute asset URLs.
 const root = resolve('dist'), prefix = '/chess-coach/';
@@ -39,11 +40,34 @@ try {
   await page.click('[data-category="openings"]');
   assert.equal(await page.locator('[data-practice-group]:visible').count(), 1);
   assert.equal(await page.locator('[data-practice-group="openings"]').isVisible(), true);
-  assert.match(await page.textContent('[data-practice-group="openings"]'), /Interactive drills coming next/);
+  assert.equal(await page.locator('[data-practice-group="openings"] [data-drill]').count(), 3);
   await page.click('[data-category="puzzles"]');
   assert.equal(await page.locator('[data-practice-group="puzzles"]').isVisible(), true);
-  assert.match(await page.textContent('[data-practice-group="puzzles"]'), /Interactive puzzles coming next/);
+  assert.equal(await page.locator('[data-practice-group="puzzles"] [data-drill]').count(), 3);
+  for (const drill of [...openingDrills, ...puzzleDrills]) {
+    await page.click(`[data-category="${drill.kind === 'opening' ? 'openings' : 'puzzles'}"]`);
+    await page.click(`[data-drill="${drill.id}"]`);
+    assert.equal(await page.textContent('#practiceSolution'), '');
+    assert.equal(await page.locator('#practiceInstruction').isVisible(), true);
+    if (drill.id === 'italian') {
+      await page.click('[data-square="d2"]'); await page.click('[data-square="d4"]');
+      assert.match(await page.textContent('#practiceStatus'), /legal move.*specific opening line/);
+      assert.match(await page.locator('[data-square="d2"]').getAttribute('aria-label'), /white pawn/);
+    }
+    await page.click('#practiceSolutionToggle');
+    assert.match(await page.textContent('#practiceSolution'), /Practice line from here/);
+    await page.click('#practiceRestart'); assert.equal(await page.textContent('#practiceSolution'), '');
+    for (let i = drill.side === 'white' ? 0 : 1; i < drill.line.length; i += 2) {
+      const token = drill.line[i];
+      await page.click(`[data-square="${token.slice(0, 2)}"]`); await page.click(`[data-square="${token.slice(2, 4)}"]`);
+    }
+    assert.equal(await page.getAttribute('#practicePanel', 'data-state'), 'won', drill.id);
+    assert.match(await page.textContent('#practiceStatus'), drill.kind === 'opening' ? /Opening line complete/ : /Puzzle solved/);
+    await page.click('#practiceUndo'); assert.equal(await page.getAttribute('#practicePanel', 'data-state'), 'player');
+    await page.click('#practiceReturn');
+  }
   await page.click('[data-category="checkmates"]');
+  assert.equal(await page.locator('[data-practice-group="checkmates"] [data-drill]').count(), 3);
   assert.match(await page.textContent('#practiceGameStatus'), /Review a game/);
   for (const [drill, from, to] of [['mate-one-white', 'e1', 'e8'], ['mate-one-black', 'e8', 'e1']]) {
     await page.click(`[data-drill="${drill}"]`);
@@ -68,7 +92,7 @@ try {
   assert.equal(await page.getAttribute('#reviewTab', 'aria-selected'), 'true');
   assert.equal(await page.textContent('#step'), '0 / 0');
   assert.equal(await page.textContent('#pgn'), '');
-  console.log('Practice tab: category browsing, honest availability, standalone mates for both colors, tab keyboard control and responsive layouts passed.');
+  console.log('Practice library: all three openings, all three puzzles, checkmates for both colors, solutions, takebacks, keyboard and mobile layout passed.');
   assert.equal(await page.locator('#tryMate').isVisible(), false);
   assert.equal(await page.$eval('#engineDetails', element => element.open), false);
   assert.equal(await page.locator('#evaluation').isVisible(), false);
@@ -286,6 +310,66 @@ try {
   console.log('Mate practice: both colors, alternative mating move, real defense, hidden/revealed solution, undo, promotion, return, review resume, lifecycle and mobile layout passed.');
   await context.close();
 
+  const historyContext = await browser.newContext(), historyPage = await historyContext.newPage();
+  const historyErrors = []; historyPage.on('pageerror', error => historyErrors.push(error.message));
+  await historyPage.goto(url); await historyPage.selectOption('#quality', 'quick');
+  await historyPage.fill('#pgn', '1. e5'); await historyPage.click('#analyze');
+  await historyPage.click('#historyTab');
+  await historyPage.waitForFunction(() => document.querySelector('#historyCount').textContent === '0 saved games');
+  await historyPage.click('#reviewTab');
+  const uploadedPgn = '[White "Alice"]\n[Black "Bob"]\n\n1. e4 e5 2. Nf3 Nc6';
+  await historyPage.setInputFiles('#pgnFile', { name:'match.pgn', mimeType:'application/x-chess-pgn', buffer:Buffer.from(uploadedPgn) });
+  await historyPage.waitForFunction(() => document.querySelector('#saveStatus').textContent.startsWith('Saved to game history'));
+  await historyPage.click('#historyTab');
+  await historyPage.waitForFunction(() => document.querySelectorAll('.history-card').length === 1);
+  assert.match(await historyPage.textContent('#historyList'), /Alice vs Bob/);
+  await historyPage.reload(); await historyPage.click('#historyTab');
+  await historyPage.waitForFunction(() => document.querySelectorAll('.history-card').length === 1);
+  await historyPage.click('.history-card button');
+  assert.equal(await historyPage.getAttribute('#reviewTab', 'aria-selected'), 'true');
+  assert.equal(await historyPage.inputValue('#pgn'), uploadedPgn);
+  await historyPage.selectOption('#quality', 'quick');
+  await historyPage.fill('#pgn', '[White "A changed header"]\n\n1. e4 {comment} e5\n2. Nf3! Nc6 *'); await historyPage.click('#analyze');
+  await historyPage.waitForFunction(() => document.querySelector('#saveStatus').textContent.includes('No duplicate was added'));
+  await historyPage.click('#historyTab'); assert.equal(await historyPage.locator('.history-card').count(), 1);
+  // Independent database connections race to save the same game: only one insert wins.
+  const concurrent = await historyPage.evaluate(async () => {
+    const { GameHistory } = await import('./js/game-history.js'), { parseGame } = await import('./js/chess-review.js');
+    const pgn = '[White "<img src=x onerror=alert(1)>"]\n\n1. c4 e5', game = parseGame(pgn);
+    const results = await Promise.all([new GameHistory().save(game, pgn), new GameHistory().save(game, pgn)]);
+    return results.map(result => result.duplicate).sort();
+  });
+  assert.deepEqual(concurrent, [false, true]);
+  await historyPage.click('#reviewTab'); await historyPage.click('#historyTab');
+  await historyPage.waitForFunction(() => document.querySelectorAll('.history-card').length === 2);
+  assert.equal(await historyPage.locator('#historyList img').count(), 0);
+  assert.match(await historyPage.textContent('#historyList'), /<img src=x onerror=alert\(1\)>/);
+  await historyPage.screenshot({ path:'test-results/game-history-desktop.png', fullPage:true });
+  await historyPage.setViewportSize({ width:390, height:844 });
+  assert.equal(await historyPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await historyPage.screenshot({ path:'test-results/game-history-mobile.png', fullPage:true });
+  assert.deepEqual(historyErrors, []); await historyContext.close();
+
+  const quotaContext = await browser.newContext();
+  await quotaContext.addInitScript(() => { IDBObjectStore.prototype.add = function () { throw new DOMException('Quota exceeded', 'QuotaExceededError'); }; });
+  const quotaPage = await quotaContext.newPage(); await quotaPage.goto(url); await quotaPage.selectOption('#quality', 'quick');
+  await quotaPage.fill('#pgn', '1. e4'); await quotaPage.click('#analyze');
+  await quotaPage.waitForFunction(() => document.querySelector('#saveStatus').textContent.includes('not saved'));
+  await quotaPage.waitForFunction(() => document.querySelector('#engineStatus').dataset.state === 'complete');
+  await quotaPage.click('#historyTab');
+  await quotaPage.waitForFunction(() => document.querySelector('#historyCount').textContent === '0 saved games');
+  await quotaContext.close();
+
+  const noStorageContext = await browser.newContext();
+  await noStorageContext.addInitScript(() => Object.defineProperty(window, 'indexedDB', { get() { throw new DOMException('Storage blocked', 'SecurityError'); } }));
+  const noStoragePage = await noStorageContext.newPage(); await noStoragePage.goto(url);
+  await noStoragePage.selectOption('#quality', 'quick'); await noStoragePage.fill('#pgn', '1. e4'); await noStoragePage.click('#analyze');
+  await noStoragePage.waitForFunction(() => document.querySelector('#engineStatus').dataset.state === 'complete');
+  assert.match(await noStoragePage.textContent('#saveStatus'), /not saved/);
+  await noStoragePage.click('#historyTab'); assert.match(await noStoragePage.textContent('#historyError'), /unavailable/);
+  await noStorageContext.close();
+  console.log('Game history: real file upload, invalid PGN exclusion, reload persistence, reopen, normalized duplicates, concurrent deduplication, safe text, mobile and storage failures passed.');
+
   const failedContext = await browser.newContext();
   await failedContext.route('**/*.wasm', route => route.fulfill({ status:404, body:'Missing engine' }));
   const failedPage = await failedContext.newPage();
@@ -295,6 +379,9 @@ try {
   await failedPage.waitForFunction(() => document.querySelector('#engineStatus').dataset.state === 'error', null, { timeout:35000 });
   assert.match(await failedPage.textContent('#error'), /could not complete/);
   assert.match(await failedPage.textContent('#reviewed'), /0 \/ 1/);
+  await failedPage.click('#historyTab');
+  await failedPage.waitForFunction(() => document.querySelector('#historyCount').textContent === '1 saved game');
+  await failedPage.click('#reviewTab');
   await failedPage.click('[data-ply="1"]');
   assert.match(await failedPage.textContent('#coach'), /Pending/);
   await failedContext.unroute('**/*.wasm');

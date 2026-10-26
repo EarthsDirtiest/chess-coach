@@ -19,18 +19,53 @@ Node installation: deploy the committed `dist/` directory.
 
 ## Analysis and coaching
 
-The top navigation separates **Game review** from **Practice**. The Practice
-library groups training into **Openings**, **Checkmates**, and **Puzzles**, with
-filters for browsing each category. This first version includes playable mate-in-one
-exercises for both colors, a mate-in-two exercise, and mating positions from the
-current game review. Opening drills and tactical puzzles are clearly marked as
-coming next. Weakness memory, personalized recommendations, and saved game history
-are reserved for later iterations.
+The top navigation separates **Game review**, **Practice**, and **Game history**.
+The Practice library contains three playable exercises in each category:
+
+- **Openings:** Italian Game as White, Queen’s Gambit Declined as White, and a
+  Sicilian/Najdorf line as Black. Prepared replies and move explanations teach a
+  specific line; other legal opening moves are not called chess mistakes.
+- **Checkmates:** mate in one as White, mate in one as Black, and mate in two.
+  Stockfish defends, and legal alternative mating moves are accepted.
+- **Puzzles:** fork the king and queen, win a pinned knight, and capture a loose
+  queen. Legal prepared lines teach the tactic; both safe captures of the pinned
+  knight are accepted. Solutions remain hidden until requested.
+
+Mating positions from the current game remain available as additional practice.
+All exercises support undo, restart, reveal, and return. Weakness memory and
+personalized recommendations remain future work.
 
 Standalone exercises use the existing Stockfish trainer without replacing the
 loaded PGN or its analyses. Return to practices keeps the category selection;
 switching back to Game review restores the original review position. The tab
 buttons also support Left/Right, Home and End keys.
+
+## Game history
+
+Paste a PGN and analyze it, or use **Upload a PGN file** to import a single game.
+Successfully parsed games are saved in IndexedDB before analysis completes. The
+example button and standalone exercises do not add games to history. Saved PGNs
+can be reopened for a fresh Stockfish review, and survive page reloads in the
+same browser. Earlier uploads made before this feature must be imported once.
+
+The exact canonical starting FEN and main-line UCI move sequence form a unique
+key. Comments, whitespace, annotations, variations, and changed headers cannot
+create another copy; identical move sequences from the same initial FEN share
+one entry, even if player names or dates differ. The original saved PGN and its
+headers are retained. The read and insert use one IndexedDB write transaction,
+preventing simultaneous tabs from adding duplicates. Different move sequences
+are separate entries. No hash collisions are possible because the canonical
+content itself is the key.
+
+History is local to this site, browser and device. Clearing site data removes it;
+there is no account sync. Storage failures are reported without interrupting
+review. Uploaded PGNs remain local. Saved PGNs are parsed again when reopened,
+and metadata is rendered as text. File uploads and pasted PGNs share the existing
+200 KB / 1,000 half-move validation.
+
+Opening references: [Italian Game](https://lichess.org/opening/Italian_Game/e4_e5_Nf3_Nc6_Bc4),
+[Queen’s Gambit Declined](https://lichess.org/opening/Queens_Gambit_Declined/d4_d5_c4_e6),
+and [Sicilian Najdorf](https://lichess.org/opening/Sicilian_Defense_Najdorf_Variation/e4_c5_Nf3_d6_d4_cxd4_Nxd4_Nf6_Nc3_a6).
 
 - [Stockfish.js 19.0.1](https://github.com/nmrugg/stockfish.js/tree/v19.0.1), Lite
   single-threaded WASM, runs in a dedicated Web Worker. It works on GitHub Pages
