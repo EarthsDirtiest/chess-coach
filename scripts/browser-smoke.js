@@ -310,6 +310,121 @@ try {
   console.log('Mate practice: both colors, alternative mating move, real defense, hidden/revealed solution, undo, promotion, return, review resume, lifecycle and mobile layout passed.');
   await context.close();
 
+  const coachContext = await browser.newContext(), coachPage = await coachContext.newPage();
+  const coachErrors = []; coachPage.on('pageerror', error => coachErrors.push(error.message));
+  // Upgrade a real version-one history database without losing its uploaded PGN.
+  await coachPage.goto(url + 'vendor/chess.js/LICENSE');
+  await coachPage.evaluate(async () => {
+    const { parseGame } = await import('/chess-coach/js/chess-review.js');
+    const { gameIdentity } = await import('/chess-coach/js/game-history.js');
+    const pgn = '[White "Me"]\n[Black "Opponent"]\n\n1. f3 e5 2. g4 Qh4#', game = parseGame(pgn);
+    await new Promise((resolve, reject) => {
+      const request = indexedDB.open('chess-coach-history', 1);
+      request.onupgradeneeded = () => request.result.createObjectStore('games', { keyPath:'id' });
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const db = request.result, tx = db.transaction('games', 'readwrite');
+        tx.objectStore('games').add({ id:gameIdentity(game), pgn, headers:game.headers, halfMoves:4, uploadedAt:Date.now() });
+        tx.oncomplete = () => { db.close(); resolve(); };
+      };
+    });
+  });
+  await coachPage.goto(url); await coachPage.selectOption('#quality', 'quick');
+  await coachPage.click('#historyTab'); await coachPage.waitForFunction(() => document.querySelectorAll('.history-card').length === 1);
+  await coachPage.click('.history-card button');
+  await coachPage.waitForFunction(() => document.querySelector('#engineStatus').dataset.state === 'complete');
+  assert.match(await coachPage.textContent('#gameCoachStatus'), /Choose.*I played White/);
+  await coachPage.click('#coachTab'); assert.equal(await coachPage.textContent('#coachGameCount'), '0');
+  await coachPage.click('#reviewTab'); await coachPage.selectOption('#player', 'white');
+  await coachPage.waitForFunction(() => document.querySelector('#gameCoachStatus').textContent.includes('profile has been updated'));
+  await coachPage.click('#coachTab'); assert.equal(await coachPage.textContent('#coachGameCount'), '1');
+  assert.equal(await coachPage.textContent('#coachMoveCount'), '2');
+  assert.match(await coachPage.locator('#coachPriorities h3').first().textContent(), /Spot mating threats/);
+  assert.match(await coachPage.textContent('#coachEvidence'), /Early estimate/);
+  const firstReport = await coachPage.evaluate(async () => {
+    const { GameHistory } = await import('./js/game-history.js'); return (await new GameHistory().listReports())[0];
+  });
+  await coachPage.locator('#coachPriorities button').first().click();
+  assert.equal(await coachPage.textContent('#practiceReturn'), 'Return to my coach');
+  await coachPage.click('[data-square="e1"]'); await coachPage.click('[data-square="e8"]');
+  await coachPage.click('#practiceReturn'); assert.equal(await coachPage.getAttribute('#coachTab', 'aria-selected'), 'true');
+  assert.equal(await coachPage.textContent('#coachGameCount'), '1');
+  await coachPage.locator('#coachPriorities').getByRole('button', { name:'Review this move' }).first().click();
+  await coachPage.waitForFunction(() => document.querySelector('#step').textContent === '3 / 4');
+  assert.equal(await coachPage.textContent('#step'), '3 / 4');
+  await coachPage.waitForFunction(() => document.querySelector('#gameCoachStatus').textContent.includes('still counts once'));
+  await coachPage.selectOption('#player', 'black');
+  await coachPage.waitForFunction(() => document.querySelector('#gameCoachStats').textContent.includes('100/100'));
+  await coachPage.click('#coachTab'); assert.equal(await coachPage.textContent('#coachGameCount'), '1');
+  assert.equal(await coachPage.locator('#coachPriorities h3').count(), 0);
+  await coachPage.click('#reviewTab'); await coachPage.selectOption('#player', 'white');
+  await coachPage.waitForFunction(() => document.querySelector('#gameCoachStatus').textContent.includes('still counts once'));
+  await coachPage.fill('#pgn', '[White "Me"]\n[Black "Another opponent"]\n[SetUp "1"]\n[FEN "6k1/5ppp/8/8/8/8/5PPP/4R1K1 w - - 0 1"]\n\n1. Re8#');
+  await coachPage.click('#analyze');
+  await coachPage.waitForFunction(() => document.querySelector('#gameCoachStatus').textContent.includes('profile has been updated'));
+  await coachPage.click('#coachTab'); assert.equal(await coachPage.textContent('#coachGameCount'), '2');
+  assert.match(await coachPage.textContent('#coachTrend'), /^\+[1-9]\d* points$/);
+  assert.equal(await coachPage.locator('#coachTimeline tr').count(), 2);
+  await coachPage.screenshot({ path:'test-results/coach-profile-desktop.png', fullPage:true });
+  await coachPage.setViewportSize({ width:390, height:844 });
+  assert.equal(await coachPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await coachPage.screenshot({ path:'test-results/coach-profile-mobile.png', fullPage:true });
+  await coachPage.reload(); await coachPage.click('#coachTab');
+  await coachPage.waitForFunction(() => document.querySelector('#coachGameCount').textContent === '2');
+  const persisted = await coachPage.evaluate(async () => { const { GameHistory } = await import('./js/game-history.js'); return new GameHistory().listReports(); });
+  assert.equal(persisted.find(report => report.id === firstReport.id).firstReviewedAt, firstReport.firstReviewedAt);
+  await coachPage.click('#practiceTab'); assert.ok(await coachPage.locator('#practiceRecommendations button').count());
+  await coachPage.locator('#practiceRecommendations button').first().click(); await coachPage.click('#practiceReturn');
+  assert.equal(await coachPage.getAttribute('#practiceTab', 'aria-selected'), 'true');
+  await coachPage.click('#reviewTab'); await coachPage.selectOption('#quality', 'deep'); await coachPage.selectOption('#player', 'white');
+  await coachPage.fill('#pgn', '1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. c3 Nf6 5. d3 d6'); await coachPage.click('#analyze');
+  await coachPage.waitForFunction(() => document.querySelector('#engineStatus').dataset.state === 'running');
+  await coachPage.click('#reviewAction');
+  await coachPage.click('#coachTab'); assert.equal(await coachPage.textContent('#coachGameCount'), '2');
+  await coachPage.click('#reviewTab'); await coachPage.selectOption('#quality', 'quick'); await coachPage.click('#reviewAction');
+  await coachPage.waitForFunction(() => document.querySelector('#gameCoachStatus').textContent.includes('profile has been updated'));
+  await coachPage.click('#coachTab'); assert.equal(await coachPage.textContent('#coachGameCount'), '3');
+  const concurrentReports = await coachPage.evaluate(async () => {
+    const { GameHistory } = await import('./js/game-history.js'), history = new GameHistory();
+    const original = (await history.listReports())[0];
+    await Promise.all([history.saveReport(original), new GameHistory().saveReport(original)]);
+    const reports = await history.listReports(); return { count:reports.length, original:original.firstReviewedAt, after:reports.find(report => report.id === original.id).firstReviewedAt };
+  });
+  assert.equal(concurrentReports.count, 3); assert.equal(concurrentReports.after, concurrentReports.original);
+  await coachPage.click('#reviewTab'); await coachPage.selectOption('#player', 'auto');
+  await coachPage.fill('#pgn', '[White "EarthsDirtiest"]\n[Black "Rival"]\n\n1. d4 d5'); await coachPage.click('#analyze');
+  await coachPage.waitForFunction(() => document.querySelector('#gameCoachStatus').textContent.includes('profile has been updated'));
+  await coachPage.click('#coachTab'); assert.equal(await coachPage.textContent('#coachGameCount'), '4');
+  // Fast prepared results isolate the example-exclusion rule from a long 110-ply review.
+  await coachPage.evaluate(async () => {
+    const { StockfishEngine } = await import('./js/stockfish-engine.js'), { Chess } = await import('./vendor/chess.js/chess.js');
+    window.realAnalyze = StockfishEngine.prototype.analyze;
+    StockfishEngine.prototype.analyze = async ({ fen }) => {
+      const move = new Chess(fen).moves({ verbose:true })[0], uci = move.from + move.to + (move.promotion || '');
+      return { score:{ type:'cp', value:0 }, bestMove:uci, pv:[uci], depth:1 };
+    };
+  });
+  await coachPage.click('#reviewTab'); await coachPage.click('#demo');
+  await coachPage.waitForFunction(() => document.querySelector('#engineStatus').dataset.state === 'complete');
+  assert.match(await coachPage.textContent('#gameCoachStatus'), /Example game.*will not change/);
+  await coachPage.click('#coachTab'); assert.equal(await coachPage.textContent('#coachGameCount'), '4');
+  assert.deepEqual(coachErrors, []); await coachContext.close();
+
+  const reportQuotaContext = await browser.newContext();
+  await reportQuotaContext.addInitScript(() => {
+    const put = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function (...args) { if (this.name === 'coachReports') throw new DOMException('Quota exceeded', 'QuotaExceededError'); return put.apply(this, args); };
+  });
+  const reportQuotaPage = await reportQuotaContext.newPage(); await reportQuotaPage.goto(url);
+  await reportQuotaPage.selectOption('#quality', 'quick'); await reportQuotaPage.selectOption('#player', 'white');
+  await reportQuotaPage.fill('#pgn', '1. e4'); await reportQuotaPage.click('#analyze');
+  await reportQuotaPage.waitForFunction(() => document.querySelector('#gameCoachStatus').textContent.includes('was not saved'));
+  assert.equal(await reportQuotaPage.getAttribute('#engineStatus', 'data-state'), 'complete');
+  await reportQuotaPage.click('#historyTab'); await reportQuotaPage.waitForFunction(() => document.querySelectorAll('.history-card').length === 1);
+  await reportQuotaPage.click('#coachTab'); assert.equal(await reportQuotaPage.textContent('#coachGameCount'), '0');
+  await reportQuotaContext.close();
+  console.log('Personal coach: history migration, confirmed side, prioritized evidence, recommended practice, side correction, reanalysis deduplication, progress, reload, partial-review and example exclusion, concurrency, storage failure and mobile passed.');
+
   const historyContext = await browser.newContext(), historyPage = await historyContext.newPage();
   const historyErrors = []; historyPage.on('pageerror', error => historyErrors.push(error.message));
   await historyPage.goto(url); await historyPage.selectOption('#quality', 'quick');

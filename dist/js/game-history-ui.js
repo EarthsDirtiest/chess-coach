@@ -10,7 +10,8 @@ export class GameHistoryUI {
   async refresh() {
     const generation = ++this.generation;
     try {
-      const records = await this.store.list(); if (generation !== this.generation) return;
+      const [records, reports] = await Promise.all([this.store.list(), this.store.listReports()]); if (generation !== this.generation) return;
+      const byGame = new Map(reports.map(report => [report.id, report]));
       $('historyError').textContent = ''; $('historyCount').textContent = `${records.length} saved ${records.length === 1 ? 'game' : 'games'}`;
       $('historyEmpty').hidden = records.length > 0;
       $('historyList').replaceChildren(...records.map(record => {
@@ -19,9 +20,10 @@ export class GameHistoryUI {
         const date = record.headers.Date?.includes('?') ? null : record.headers.Date;
         const result = record.headers.Result && record.headers.Result !== '*' ? record.headers.Result : 'Result not provided';
         const details = document.createElement('p'); details.textContent = [record.headers.Event, date, result, `${record.halfMoves} half-moves`].filter(Boolean).join(' · ');
-        const saved = document.createElement('span'); saved.className = 'hint'; saved.textContent = `Uploaded ${new Date(record.uploadedAt).toLocaleString()}`;
+        const report = byGame.get(record.id);
+        const saved = document.createElement('span'); saved.className = 'hint'; saved.textContent = `Uploaded ${new Date(record.uploadedAt).toLocaleString()}${report ? ` · Coach ${report.score}/100 as ${report.side === 'white' ? 'White' : 'Black'}` : ' · Not added to coaching profile yet'}`;
         const button = document.createElement('button'); button.type = 'button'; button.className = 'secondary'; button.textContent = 'Open review';
-        button.onclick = () => this.onOpen(record);
+        button.onclick = () => this.onOpen({ ...record, report });
         card.append(heading, details, saved, button); return card;
       }));
     } catch (error) {
