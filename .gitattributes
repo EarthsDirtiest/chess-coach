@@ -1,0 +1,12 @@
+* text=auto
+*.js text eol=lf
+*.html text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.wasm binary
+# Preserve the exact upstream release bytes and checksums on Windows checkouts.
+dist/vendor/stockfish/*.js -text
+dist/vendor/stockfish/Copying.txt -text
+# Upstream generated code and license formatting are kept verbatim.
+dist/vendor/** -whitespace
