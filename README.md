@@ -10,12 +10,50 @@ Use Node.js 20 or newer:
 
 ```sh
 npm ci
+npm run build
 npm run serve
 ```
 
 Open http://127.0.0.1:4173. Serve over HTTP(S); opening the HTML as `file://` cannot
 load browser modules and WebAssembly reliably. Production needs no build step or
 Node installation: deploy the committed `dist/` directory.
+
+## Midnight Grandmaster interface
+
+The UI follows the supplied desktop and mobile mockups with a midnight palette,
+emerald accents, desktop sidebar, and mobile bottom navigation. Desktop analysis
+uses board / moves-and-coach / engine columns; mobile shows a square board,
+evaluation rail, Coach–Moves–Engine panels, chart and game summary. Import a PGN
+from **Import game** on desktop or the mobile navigation menu.
+
+The board renderer shares one locally bundled SVG piece set across analysis and
+all practices. CSS explicitly defines eight equal rows and columns; board and
+cell geometry are tested at 320, 390, 589, 768, 1024, 1280, 1440 and 1920 pixels.
+Rank/file coordinates and the last-move arrow follow board orientation. **Flip
+board** changes the view without changing which player is tracked by the coach.
+Playback, chart keyboard/click navigation, move pairs and line disclosure are
+presentation components over the existing review state.
+
+Evaluations, search depths, principal variation, move grades, insight cards and
+summary metrics come from actual game, engine and profile data. The engine
+supplies a single principal variation; the UI displays that actual continuation.
+The summary labels the existing heuristic as **Coach score**, without inventing
+a chess-site accuracy percentage. Pending positions remain pending and create
+gaps in the chart. The chart clips its display to ±3 pawns and marks mate using
+the real score; it does not change stored evaluations. Forced-mate solutions
+stay hidden until explicitly revealed.
+
+Reusable presentation modules live in `dist/js/analysis-workspace.js`,
+`move-list.js`, `evaluation-chart.js`, `icons.js` and `chess-board.js`, with shared
+styles in `dist/css/app.css`. The Stockfish worker, game parser, coaching rules,
+training models, history identity and IndexedDB schema are preserved. `npm run
+build` validates the static distribution, UI integration IDs, JavaScript syntax,
+styles, SVG assets and the existing WASM header. CI runs that check before tests.
+There is no new runtime framework or engine build/download step.
+
+The Cburnett SVG pieces are by Colin M. L. Burnett (GPLv2+, distributed using the
+GPLv3 option). Their editable SVG source and attribution are bundled in
+[`dist/vendor/pieces/NOTICE.md`](dist/vendor/pieces/NOTICE.md).
 
 ## Analysis and coaching
 
