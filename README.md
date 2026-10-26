@@ -46,6 +46,21 @@ Node installation: deploy the committed `dist/` directory.
   changes the wording so your opponent's moves are not attributed to you.
 - Scores, search depth and average evaluation loss sit in a collapsed
   **Show engine details** panel; the main note focuses on the chess lesson.
+- When the displayed, nonterminal position has a forced-mate evaluation,
+  **Try the checkmate** opens a separate practice board. Play the attacking side
+  against Stockfish's best defense, including when the defender moves first.
+  Legal moves and promotion choices are enforced; alternative mating moves are
+  accepted after a fresh search. Undo your turn or start again at any time.
+  The solution stays hidden until **Show solution** is selected. Its legal line
+  is extended towards mate when the engine's original variation is incomplete;
+  any unresolved continuation is labeled honestly. The original coaching note
+  also hides the mating line until explicitly revealed.
+- **Return to review** restores the same position, perspective, move-list scroll,
+  and engine-details state. Any running review pauses during practice and resumes
+  on return. Practice never changes the PGN, review positions or cached analyses.
+  A finite search that no longer confirms mate offers a takeback; only an actual
+  checkmate completes the challenge. Stalemates and draw claims are handled
+  separately from winning the attack.
 - Estimated losses of 0.50 / 1.00 / 2.00 pawns are labeled inaccuracy / mistake /
   blunder. Losing a found forced mate or allowing a new one is a blunder. Mate
   transitions are excluded from average centipawn loss. These are teaching
@@ -66,7 +81,9 @@ npm run test:browser
 The unit tests cover chess rules, score perspective, mate handling and UCI worker
 lifecycle. The browser test uses the real WASM engine and a static server under
 a project subdirectory to check GitHub Pages asset paths, tactical calculations,
-review progress, cancellation, PGN replacement and engine load failures.
+review progress, cancellation, PGN replacement and engine load failures. Mate
+practice tests cover real defensive play, alternative mating moves, hidden
+solutions, promotion, takebacks, restoration, mobile layout and cancellation.
 
 ## Vendored dependencies
 
