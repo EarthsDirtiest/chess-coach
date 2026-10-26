@@ -4,30 +4,64 @@ import { sample } from './example-game.js';
 import { renderBoard } from './chess-board.js';
 import { getMateOpportunity } from './mate-practice.js';
 import { MatePracticeUI } from './mate-practice-ui.js';
+import { PracticeHub } from './practice-hub.js';
 
 const $ = id => document.getElementById(id);
 const start = () => ['rnbqkbnr','pppppppp','........','........','........','........','PPPPPPPP','RNBQKBNR'].map(row => row.split(''));
 const qualities = { quick: { depth:16, moveTimeMs:350 }, balanced: { depth:18, moveTimeMs:700 }, deep: { depth:22, moveTimeMs:1500 } };
 let game = null, ply = 0, side = 'black', engine = null, runVersion = 0, phase = 'idle';
 let reviewSnapshot = null;
+let activeTab = 'review';
+const tabScroll = { review:0, practice:0 };
 const revealedPositions = new Set();
 const practice = new MatePracticeUI({ onReturn:returnToReview });
+const hub = new PracticeHub({ onStart:options => enterPractice({ ...options, origin:'practice' }), onReview:() => changeTab('review') });
 
-function enterPractice() {
-  if (practice.active || !game || !getMateOpportunity(game.states[ply], game.analyses[ply])) return;
-  reviewSnapshot = { ply, side, phase, resume:['loading', 'running'].includes(phase), scrollTop:$('moves').scrollTop,
-    details:$('engineDetails').open, pageY:window.scrollY };
-  cancelReview('paused');
-  try { practice.start({ initialFen:game.initialFen, moves:game.states[ply].uciMoves, analysis:game.analyses[ply] }); }
-  catch (error) { returnToReview(); $('error').textContent = error.message; }
+function activateTab(tab) {
+  activeTab = tab;
+  for (const name of ['review', 'practice']) {
+    const selected = name === tab;
+    $(name + 'Tab').setAttribute('aria-selected', String(selected)); $(name + 'Tab').tabIndex = selected ? 0 : -1;
+    $(name + 'View').hidden = !selected;
+  }
 }
-function returnToReview({ resume = true } = {}) {
+function changeTab(tab) {
+  if (practice.active) { returnToReview({ destination:tab }); return; }
+  if (activeTab === tab) return;
+  tabScroll[activeTab] = window.scrollY; activateTab(tab); window.scrollTo(0, tabScroll[tab]);
+}
+function enterPractice({ drill = null, positionPly = ply, origin = 'review', focusId = 'tryMate' } = {}) {
+  if (practice.active) return;
+  const state = game?.states[positionPly], analysis = drill?.analysis || game?.analyses[positionPly];
+  if (!drill && (!state || !getMateOpportunity(state, analysis))) return;
+  reviewSnapshot = { ply, side, phase, resume:['loading', 'running'].includes(phase), scrollTop:$('moves').scrollTop,
+    details:$('engineDetails').open, pageY:window.scrollY, origin, focusId };
+  tabScroll[origin] = window.scrollY;
+  cancelReview('paused');
+  $('practiceHubError').textContent = '';
+  if (origin === 'practice') {
+    $('practiceSession').appendChild($('reviewBoard')); $('practiceSession').hidden = false; $('practiceHub').hidden = true;
+    activateTab('practice');
+  }
+  try {
+    practice.start({ initialFen:drill?.fen || game.initialFen, moves:drill ? [] : state.uciMoves, analysis,
+      title:drill?.title || 'Find the checkmate', returnLabel:origin === 'practice' ? 'Return to practices' : 'Return to review' });
+    window.scrollTo(0, 0);
+  }
+  catch (error) { returnToReview(); $(origin === 'practice' ? 'practiceHubError' : 'error').textContent = error.message; }
+}
+function returnToReview({ resume = true, destination = null } = {}) {
   practice.close();
   const saved = reviewSnapshot; reviewSnapshot = null;
   if (!saved) { render(); return; }
+  $('reviewView').insertBefore($('reviewBoard'), $('reviewRight'));
+  $('practiceSession').hidden = true; $('practiceHub').hidden = false;
+  activateTab(destination || saved.origin);
   ply = saved.ply; side = saved.side; phase = saved.resume ? 'paused' : saved.phase;
   $('engineDetails').open = saved.details; render(); $('moves').scrollTop = saved.scrollTop;
-  $('tryMate').focus({ preventScroll:true }); window.scrollTo(0, saved.pageY);
+  const sameTab = activeTab === saved.origin;
+  $(sameTab ? saved.focusId : activeTab + 'Tab')?.focus({ preventScroll:true });
+  window.scrollTo(0, sameTab ? saved.pageY : tabScroll[activeTab]);
   if (saved.resume && resume) void startReview();
 }
 
@@ -155,9 +189,19 @@ function render() {
   } else $('moves').innerHTML = '<div class="empty">Your move list will appear here.</div>';
   $('copy').disabled = !game;
   renderEngine();
+  hub.updateGame(game, phase);
 }
 function jump(nextPly) { if (practice.active) return; ply = Math.max(0, Math.min(game?.history.length || 0, nextPly)); render(); }
-$('tryMate').onclick = enterPractice;
+$('tryMate').onclick = () => enterPractice();
+for (const name of ['review', 'practice']) {
+  $(name + 'Tab').onclick = () => changeTab(name);
+  $(name + 'Tab').onkeydown = event => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const next = event.key === 'Home' ? 'review' : event.key === 'End' ? 'practice' : activeTab === 'review' ? 'practice' : 'review';
+    changeTab(next); $(next + 'Tab').focus();
+  };
+}
 $('analyze').onclick = () => { try { load($('pgn').value); } catch (error) { $('error').textContent = error.message; } };
 $('demo').onclick = () => { $('pgn').value = sample; $('player').value = 'auto'; try { load(sample); } catch (error) { $('error').textContent = error.message; } };
 $('reviewAction').onclick = () => {
@@ -180,7 +224,7 @@ $('copy').onclick = async () => {
   catch { $('error').textContent = 'Clipboard not available in this browser.'; }
 };
 document.addEventListener('keydown', event => {
-  if (practice.active) return;
+  if (practice.active || activeTab !== 'review') return;
   if (['INPUT','TEXTAREA','SELECT','BUTTON'].includes(document.activeElement.tagName) || event.altKey || event.ctrlKey || event.metaKey) return;
   if (event.key === 'ArrowRight') { event.preventDefault(); jump(ply + 1); }
   if (event.key === 'ArrowLeft') { event.preventDefault(); jump(ply - 1); }

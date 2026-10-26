@@ -19,6 +19,19 @@ Node installation: deploy the committed `dist/` directory.
 
 ## Analysis and coaching
 
+The top navigation separates **Game review** from **Practice**. The Practice
+library groups training into **Openings**, **Checkmates**, and **Puzzles**, with
+filters for browsing each category. This first version includes playable mate-in-one
+exercises for both colors, a mate-in-two exercise, and mating positions from the
+current game review. Opening drills and tactical puzzles are clearly marked as
+coming next. Weakness memory, personalized recommendations, and saved game history
+are reserved for later iterations.
+
+Standalone exercises use the existing Stockfish trainer without replacing the
+loaded PGN or its analyses. Return to practices keeps the category selection;
+switching back to Game review restores the original review position. The tab
+buttons also support Left/Right, Home and End keys.
+
 - [Stockfish.js 19.0.1](https://github.com/nmrugg/stockfish.js/tree/v19.0.1), Lite
   single-threaded WASM, runs in a dedicated Web Worker. It works on GitHub Pages
   without cross-origin isolation headers. The engine and its neural network are
