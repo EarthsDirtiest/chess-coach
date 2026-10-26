@@ -7,25 +7,29 @@ import { MatePracticeUI } from './mate-practice-ui.js';
 import { PracticeHub } from './practice-hub.js';
 import { GameHistoryUI } from './game-history-ui.js';
 import { CoachProfileUI } from './coach-profile-ui.js';
+import { AnalysisWorkspace } from './analysis-workspace.js';
+import { renderMoves } from './move-list.js';
 
 const $ = id => document.getElementById(id);
 const start = () => ['rnbqkbnr','pppppppp','........','........','........','........','PPPPPPPP','RNBQKBNR'].map(row => row.split(''));
 const qualities = { quick: { depth:16, moveTimeMs:350 }, balanced: { depth:18, moveTimeMs:700 }, deep: { depth:22, moveTimeMs:1500 } };
-let game = null, ply = 0, side = 'black', engine = null, runVersion = 0, phase = 'idle';
+let game = null, ply = 0, side = 'white', engine = null, runVersion = 0, phase = 'idle';
 let reviewSnapshot = null;
 let activeTab = 'review';
 let importVersion = 0;
+let boardFlipped = false;
 const tabScroll = { review:0, practice:0, history:0, coach:0 };
 const tabs = ['review', 'practice', 'history', 'coach'];
 let trackGame = true, currentGameSaved = Promise.resolve(), reportSignature = '', lastReviewQuality = 'balanced';
 const revealedPositions = new Set();
+const workspace = new AnalysisWorkspace({ onNavigate:jump, onFlip:() => { boardFlipped = !boardFlipped; render(); }, getProfile:() => coachProfile.profile });
 const practice = new MatePracticeUI({ onReturn:returnToReview });
 const hub = new PracticeHub({ onStart:options => enterPractice({ ...options, origin:'practice' }), onReview:() => changeTab('review') });
 const historyUI = new GameHistoryUI({ onOpen:record => {
   try { if (record.report) $('player').value = record.report.side; load(record.pgn, { save:false }); changeTab('review'); $('saveStatus').textContent = 'Opened from game history. Stockfish is reviewing the saved PGN.'; }
   catch (error) { $('historyError').textContent = `This saved game could not be opened: ${error.message}`; }
 } });
-const coachProfile = new CoachProfileUI({ store:historyUI.store, onPractice:enterPractice, onEvidence:async example => {
+const coachProfile = new CoachProfileUI({ store:historyUI.store, onUpdate:() => workspace.renderSummary(), onPractice:enterPractice, onEvidence:async example => {
   try {
     const record = await historyUI.store.get(example.gameId);
     if (!record) throw new Error('The original PGN is unavailable. Import the game again to revisit this move.');
@@ -55,6 +59,7 @@ function activateTab(tab) {
     $(name + 'Tab').setAttribute('aria-selected', String(selected)); $(name + 'Tab').tabIndex = selected ? 0 : -1;
     $(name + 'View').hidden = !selected;
   }
+  workspace.setView(tab);
 }
 function changeTab(tab) {
   if (practice.active) { returnToReview({ destination:tab }); return; }
@@ -65,6 +70,7 @@ function changeTab(tab) {
 }
 function enterPractice({ drill = null, positionPly = ply, origin = 'review', focusId = 'tryMate' } = {}) {
   if (practice.active) return;
+  workspace.stopPlayback();
   const state = game?.states[positionPly], analysis = drill?.analysis || game?.analyses[positionPly];
   if (!drill && (!state || !getMateOpportunity(state, analysis))) return;
   reviewSnapshot = { ply, side, phase, resume:['loading', 'running'].includes(phase), scrollTop:$('moves').scrollTop,
@@ -79,12 +85,14 @@ function enterPractice({ drill = null, positionPly = ply, origin = 'review', foc
   try {
     practice.start({ drill, initialFen:drill ? drill.fen : game.initialFen, moves:drill ? [] : state.uciMoves, analysis,
       title:drill?.title || 'Find the checkmate', returnLabel:origin === 'coach' ? 'Return to my coach' : origin === 'practice' ? 'Return to practices' : 'Return to review' });
+    workspace.setPractice(true);
     window.scrollTo(0, 0);
   }
   catch (error) { returnToReview(); $(origin === 'coach' ? 'coachProfileError' : origin === 'practice' ? 'practiceHubError' : 'error').textContent = error.message; }
 }
 function returnToReview({ resume = true, destination = null } = {}) {
   practice.close();
+  workspace.setPractice(false);
   const saved = reviewSnapshot; reviewSnapshot = null;
   if (!saved) { render(); return; }
   $('reviewView').insertBefore($('reviewBoard'), $('reviewRight'));
@@ -126,6 +134,7 @@ function load(input, { save = true, track = true } = {}) {
   importVersion++;
   cancelReview('idle');
   game = nextGame; ply = 0; side = selectedSide(game.headers);
+  boardFlipped = false;
   trackGame = track; reportSignature = '';
   $('pgn').value = input;
   revealedPositions.clear();
@@ -193,19 +202,20 @@ function render() {
   const state = game?.states[ply] || { board:start(), ply:0, move:null };
   const coaching = game ? coachMove(game, ply, side) : null;
   const opportunity = getMateOpportunity(state, game?.analyses[ply]), hiddenMate = opportunity && !revealedPositions.has(ply);
-  renderBoard({ element:$('board'), coords:$('coords'), board:state.board, perspective:side, lastMove:state.move,
+  const perspective = boardFlipped ? (side === 'white' ? 'black' : 'white') : side;
+  renderBoard({ element:$('board'), coords:$('coords'), ranks:$('ranks'), arrow:$('moveArrow'), board:state.board, perspective, lastMove:state.move,
     critical:hiddenMate ? [] : coaching?.critical });
   const total = game?.history.length || 0;
   $('step').textContent = `${ply} / ${total}`; $('seek').max = total; $('seek').value = ply;
   for (const id of ['first','prev']) $(id).disabled = ply === 0;
   for (const id of ['last','next']) $(id).disabled = ply === total;
   $('positionTitle').textContent = moveLabel(state);
-  $('sideLabel').textContent = (side === 'black' ? 'Black' : 'White') + ' perspective';
+  $('sideLabel').textContent = (perspective === 'black' ? 'Black' : 'White') + ' perspective';
   $('gameTitle').textContent = game ? (game.headers.Event || 'GAME REVIEW') : 'YOUR BOARD';
   const analysis = game?.analyses[ply];
   $('evaluation').textContent = analysis ? formatScore(analysis.score) : 'Pending';
   $('searchDepth').textContent = analysis ? (analysis.terminal ? 'Terminal position' : `Depth ${analysis.depth}`) : 'Awaiting Stockfish';
-  $('coach').innerHTML = coaching ? `<div class="row between"><div class="eyebrow">COACHING</div><span class="pill">${escapeHTML(coaching.level)}</span></div><h3>${escapeHTML(coaching.title)}</h3><p>${escapeHTML(coaching.body)}</p>${coaching.bestMoveSan ? `<div class="note"><strong>${recommendationLabel(state)}: ${escapeHTML(coaching.bestMoveSan)}</strong>${coaching.pvSan.length ? `<div class="continuation">${escapeHTML(coaching.pvSan.join(' '))}</div>` : ''}</div>` : ''}${isOwn(state) ? '<div class="review-note">Your move</div>' : ''}` : '<div class="eyebrow">YOUR PERSONAL COACH</div><h3>Load a PGN to begin</h3><p>Choose a move to learn what it changed, spot a danger, and explore another idea.</p>';
+  $('coach').innerHTML = coaching ? `<div class="row between"><div class="eyebrow">COACHING</div><span class="pill">${escapeHTML(coaching.level)}</span></div><h3>${escapeHTML(coaching.title)}</h3><p>${escapeHTML(coaching.body)}</p>${coaching.bestMoveSan ? `<div class="note"><strong>${recommendationLabel(state)}: ${escapeHTML(coaching.bestMoveSan)}</strong>${coaching.pvSan.length ? `<div class="continuation">${escapeHTML(coaching.pvSan.join(' '))}</div>` : ''}</div>` : ''}${isOwn(state) ? '<div class="review-note">Your move</div>' : ''}` : '<h3>Your next game, understood.</h3><p>Import a PGN to explore every move, see what mattered, and build a focused practice plan.</p><button class="primary full" data-open-import>Import a game</button>';
   $('tryMate').hidden = !opportunity;
   if (hiddenMate) {
     $('coach').innerHTML = `<div class="mate-teaser"><div class="eyebrow">A CHECKMATE TO FIND</div><h3>Can you finish the attack?</h3><p>There is a forced mate for ${opportunity.attacker === 'white' ? 'White' : 'Black'} in this position. Try it on the board, or reveal the coaching when you need it.</p><button class="secondary" id="revealMateAnalysis">Show analysis and solution</button></div>`;
@@ -213,14 +223,7 @@ function render() {
   }
   $('count').textContent = `${total} half-moves`;
   if (game) {
-    const scrollTop = $('moves').scrollTop;
-    $('moves').innerHTML = game.states.slice(1).map(move => {
-      const c = coachMove(game, move.ply, side), pending = !game.analyses[move.ply - 1] || !game.analyses[move.ply];
-      const flagged = ['Mistake','Blunder'].includes(c.level);
-      return `<button class="move ${ply === move.ply ? 'selected' : ''} ${isOwn(move) ? 'own' : ''} ${pending ? 'pending' : ''} ${flagged ? 'flagged' : ''}" data-ply="${move.ply}" aria-current="${ply === move.ply ? 'step' : 'false'}" title="${escapeHTML((move.black ? 'Black' : 'White') + ': ' + c.level)}">${escapeHTML(moveLabel(move))}</button>`;
-    }).join('');
-    $('moves').scrollTop = scrollTop;
-    for (const button of $('moves').querySelectorAll('[data-ply]')) button.onclick = () => jump(Number(button.dataset.ply));
+    renderMoves({ element:$('moves'), game, ply, coachingFor:state => coachMove(game, state.ply, side), isOwn, onNavigate:jump });
     $('result').textContent = game.headers.Result || '*';
     $('players').textContent = `${game.headers.White || 'White'} vs ${game.headers.Black || 'Black'}`;
     const summary = summarizeGame(game, side), pending = summary.total - summary.reviewed;
@@ -233,6 +236,7 @@ function render() {
   renderEngine();
   hub.updateGame(game, phase);
   coachProfile.setContext({ game, side:confirmedSide(), phase, track:trackGame });
+  workspace.render({ game, ply, side, owner:confirmedSide(), phase, hiddenMate, coaching });
 }
 function jump(nextPly) { if (practice.active) return; ply = Math.max(0, Math.min(game?.history.length || 0, nextPly)); render(); }
 $('tryMate').onclick = () => enterPractice();
@@ -240,10 +244,11 @@ $('viewMyCoach').onclick = () => changeTab('coach');
 for (const name of tabs) {
   $(name + 'Tab').onclick = () => changeTab(name);
   $(name + 'Tab').onkeydown = event => {
-    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
     event.preventDefault();
-    const next = event.key === 'Home' ? tabs[0] : event.key === 'End' ? tabs.at(-1)
-      : tabs[(tabs.indexOf(activeTab) + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+    const order = window.matchMedia('(max-width: 800px)').matches ? tabs : ['review','history','practice','coach'];
+    const next = event.key === 'Home' ? order[0] : event.key === 'End' ? order.at(-1)
+      : order[(order.indexOf(activeTab) + (['ArrowRight','ArrowDown'].includes(event.key) ? 1 : order.length - 1)) % order.length];
     changeTab(next); $(next + 'Tab').focus();
   };
 }

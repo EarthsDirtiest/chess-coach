@@ -80,7 +80,7 @@ export class MatePracticeUI {
       : busy ? 'Calculating…' : 'No forced mating line was found here. Undo your move or start again to see the original solution.' : '';
     $('practicePromotion').hidden = !this.promotion;
     for (const button of $('practicePromotion').querySelectorAll('[data-promotion]')) button.disabled = !this.promotion?.some(move => move.promotion === button.dataset.promotion);
-    renderBoard({ element:$('board'), coords:$('coords'), board:state.board, perspective:state.attacker,
+    renderBoard({ element:$('board'), coords:$('coords'), ranks:$('ranks'), board:state.board, perspective:state.attacker,
       lastMove:state.lastMove, onSquare:square => this.choose(square), selected:this.selected, legalMoves:state.legalMoves,
       disabled:state.status !== 'player' || Boolean(this.promotion) });
   }

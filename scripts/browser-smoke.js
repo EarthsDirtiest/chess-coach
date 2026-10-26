@@ -5,6 +5,26 @@ import { resolve, extname, sep } from 'node:path';
 import { chromium } from 'playwright';
 import { openingDrills, puzzleDrills } from '../dist/js/practice-library.js';
 
+async function openImport(page) {
+  if (await page.$eval('#importDialog', element => element.open)) return;
+  if (page.viewportSize().width <= 800) { await page.click('#menuToggle'); await page.click('#mobileImport'); }
+  else await page.click('#openImport');
+}
+async function fillPgn(page, value) { await openImport(page); await page.fill('#pgn', value); }
+async function analyzePgn(page) { await page.click('#analyze'); if (await page.$eval('#importDialog', element => element.open)) await page.click('#closeImport'); }
+async function exampleGame(page) { await openImport(page); await page.click('#demo'); }
+async function reviewAction(page) {
+  if (page.viewportSize().width <= 800) await page.click('#enginePanelTab');
+  await page.click('#reviewAction');
+  if (page.viewportSize().width <= 800) await page.click('#coachPanelTab');
+}
+async function lastMove(page) {
+  if (page.viewportSize().width <= 800) {
+    await page.click('#movesPanelTab'); await page.locator('#moves [data-ply]').last().click(); await page.click('#coachPanelTab');
+  } else await page.click('#last');
+}
+
+
 // Serve beneath a project path, as GitHub Pages does, to catch absolute asset URLs.
 const root = resolve('dist'), prefix = '/chess-coach/';
 const requested = [];
@@ -16,7 +36,7 @@ const server = http.createServer(async (request, response) => {
     const relative = pathname.slice(prefix.length) || 'index.html';
     const file = resolve(root, relative);
     if (!file.startsWith(root + sep)) throw new Error('Invalid path');
-    const mime = { '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'application/wasm' };
+    const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css':'text/css', '.svg':'image/svg+xml', '.wasm': 'application/wasm' };
     const data = await readFile(file);
     response.writeHead(200, { 'Content-Type': mime[extname(file)] || 'text/plain', 'Cache-Control': 'no-store' });
     response.end(data);
@@ -116,8 +136,8 @@ try {
   const waitForPhase = phase => page.waitForFunction(value => document.querySelector('#engineStatus').dataset.state === value, phase);
   await page.selectOption('#quality', 'quick');
   await page.selectOption('#player', 'white');
-  await page.fill('#pgn', '1. f3 e5 2. g4 Qh4#');
-  await page.click('#analyze');
+  await fillPgn(page, '1. f3 e5 2. g4 Qh4#');
+  await analyzePgn(page);
   await waitForPhase('complete');
   assert.match(await page.textContent('#reviewed'), /2 \/ 2/);
   await page.click('[data-ply="3"]');
@@ -175,7 +195,7 @@ try {
   assert.equal(await page.textContent('#evaluation'), '−M1');
   assert.match(await page.textContent('#searchDepth'), /Depth \d+/);
   assert.equal(await page.locator('#evaluation').isVisible(), true);
-  await page.click('#last');
+  await lastMove(page);
   assert.equal(await page.$eval('#engineDetails', element => element.open), true);
   assert.equal(await page.textContent('#evaluation'), 'Black wins by mate');
   const beforeSideChange = await page.$eval('#engineProgress', element => element.value);
@@ -188,35 +208,35 @@ try {
   assert.match(await page.evaluate(() => window.copiedReport), /Your moves reviewed: 2 \/ 2; pending: 0/);
   assert.match(await page.evaluate(() => window.copiedReport), /engine evaluations: 4/);
 
-  await page.click('#demo');
+  await exampleGame(page);
   await page.waitForFunction(() => document.querySelector('#engineStatus').dataset.state === 'running' && document.querySelector('#engineProgress').value >= 2);
   await page.click('[data-ply="100"]');
   assert.match(await page.textContent('#coach'), /Pending/);
-  await page.click('#reviewAction');
+  await reviewAction(page);
   await waitForPhase('paused');
   const paused = await page.$eval('#engineProgress', element => element.value);
   await new Promise(resolve => setTimeout(resolve, 500));
   assert.equal(await page.$eval('#engineProgress', element => element.value), paused);
-  await page.click('#reviewAction');
+  await reviewAction(page);
   await page.waitForFunction(value => document.querySelector('#engineProgress').value > value, paused);
   // Replace a running review: the previous worker must never update the new game.
-  await page.fill('#pgn', '[SetUp "1"]\n[FEN "4r1k1/5ppp/8/8/8/8/5PPP/6K1 b - - 0 42"]\n\n42... Re1#');
-  await page.click('#analyze');
+  await fillPgn(page, '[SetUp "1"]\n[FEN "4r1k1/5ppp/8/8/8/8/5PPP/6K1 b - - 0 42"]\n\n42... Re1#');
+  await analyzePgn(page);
   await waitForPhase('complete');
-  await page.click('#last');
+  await lastMove(page);
   assert.equal(await page.textContent('#positionTitle'), '42... Re1#');
   assert.equal(await page.textContent('#evaluation'), 'Black wins by mate');
   assert.equal(await page.locator('[data-ply]').count(), 1);
   await page.selectOption('#quality', 'deep');
-  await page.click('#reviewAction');
+  await reviewAction(page);
   await waitForPhase('complete');
   await page.evaluate(() => {
     window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted:true }));
     window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted:true }));
   });
   await waitForPhase('complete');
-  await page.fill('#pgn', '1. e5');
-  await page.click('#analyze');
+  await fillPgn(page, '1. e5');
+  await analyzePgn(page);
   assert.match(await page.textContent('#error'), /Could not read/);
   assert.equal(await page.locator('[data-ply]').count(), 1);
   await page.click('#engineDetails summary');
@@ -231,8 +251,8 @@ try {
   // A mate in two has two valid first moves. Accept the alternative and play a real defense.
   await page.setViewportSize({ width:1280, height:900 });
   await page.selectOption('#quality', 'quick');
-  await page.fill('#pgn', '[SetUp "1"]\n[FEN "8/8/8/8/8/3K4/4Q3/k7 w - - 0 1"]\n\n1. Kc2 Ka2 2. Qa6#');
-  await page.click('#analyze'); await waitForPhase('complete');
+  await fillPgn(page, '[SetUp "1"]\n[FEN "8/8/8/8/8/3K4/4Q3/k7 w - - 0 1"]\n\n1. Kc2 Ka2 2. Qa6#');
+  await analyzePgn(page); await waitForPhase('complete');
   await page.click('#tryMate');
   await page.click('[data-square="d3"]'); await page.click('[data-square="c3"]');
   await page.waitForFunction(() => document.querySelector('#practicePanel').dataset.state === 'player');
@@ -269,7 +289,7 @@ try {
     };
   });
   await page.selectOption('#quality', 'deep');
-  await page.click('#reviewAction');
+  await reviewAction(page);
   await page.waitForFunction(() => !document.querySelector('#tryMate').hidden && document.querySelector('#engineStatus').dataset.state === 'running');
   const reviewedBeforePractice = await page.$eval('#engineProgress', element => element.value);
   await page.click('#tryMate'); await page.waitForTimeout(300);
@@ -282,18 +302,18 @@ try {
   // Defender moves first, even though the reviewer selected Black and the winning side is White.
   await page.selectOption('#quality', 'quick');
   await page.selectOption('#player', 'black');
-  await page.fill('#pgn', '[SetUp "1"]\n[FEN "8/8/8/8/8/2K5/4Q3/k7 b - - 1 1"]\n\n1... Kb1 2. Qb2#');
-  await page.click('#analyze'); await waitForPhase('complete');
+  await fillPgn(page, '[SetUp "1"]\n[FEN "8/8/8/8/8/2K5/4Q3/k7 b - - 1 1"]\n\n1... Kb1 2. Qb2#');
+  await analyzePgn(page); await waitForPhase('complete');
   await page.click('#tryMate');
   await page.waitForFunction(() => document.querySelector('#practicePanel').dataset.state === 'player');
   assert.equal(await page.textContent('#sideLabel'), 'You play White');
   assert.match(await page.locator('[data-square="b1"]').getAttribute('aria-label'), /black king/);
   await page.click('#practiceReturn');
   assert.equal(await page.textContent('#sideLabel'), 'Black perspective');
-  await page.click('#last'); assert.equal(await page.locator('#tryMate').isVisible(), false);
+  await lastMove(page); assert.equal(await page.locator('#tryMate').isVisible(), false);
 
-  await page.fill('#pgn', '[SetUp "1"]\n[FEN "7k/5P2/6K1/8/8/8/8/8 w - - 0 1"]\n\n1. f8=Q#');
-  await page.click('#analyze'); await waitForPhase('complete'); await page.click('#tryMate');
+  await fillPgn(page, '[SetUp "1"]\n[FEN "7k/5P2/6K1/8/8/8/8/8 w - - 0 1"]\n\n1. f8=Q#');
+  await analyzePgn(page); await waitForPhase('complete'); await page.click('#tryMate');
   await page.locator('[data-square="f7"]').focus(); await page.keyboard.press('Enter');
   await page.locator('[data-square="f8"]').focus(); await page.keyboard.press('Enter');
   assert.equal(await page.locator('#practicePromotion').isVisible(), true);
@@ -359,8 +379,8 @@ try {
   assert.equal(await coachPage.locator('#coachPriorities h3').count(), 0);
   await coachPage.click('#reviewTab'); await coachPage.selectOption('#player', 'white');
   await coachPage.waitForFunction(() => document.querySelector('#gameCoachStatus').textContent.includes('still counts once'));
-  await coachPage.fill('#pgn', '[White "Me"]\n[Black "Another opponent"]\n[SetUp "1"]\n[FEN "6k1/5ppp/8/8/8/8/5PPP/4R1K1 w - - 0 1"]\n\n1. Re8#');
-  await coachPage.click('#analyze');
+  await fillPgn(coachPage, '[White "Me"]\n[Black "Another opponent"]\n[SetUp "1"]\n[FEN "6k1/5ppp/8/8/8/8/5PPP/4R1K1 w - - 0 1"]\n\n1. Re8#');
+  await analyzePgn(coachPage);
   await coachPage.waitForFunction(() => document.querySelector('#gameCoachStatus').textContent.includes('profile has been updated'));
   await coachPage.click('#coachTab'); assert.equal(await coachPage.textContent('#coachGameCount'), '2');
   assert.match(await coachPage.textContent('#coachTrend'), /^\+[1-9]\d* points$/);
@@ -377,11 +397,11 @@ try {
   await coachPage.locator('#practiceRecommendations button').first().click(); await coachPage.click('#practiceReturn');
   assert.equal(await coachPage.getAttribute('#practiceTab', 'aria-selected'), 'true');
   await coachPage.click('#reviewTab'); await coachPage.selectOption('#quality', 'deep'); await coachPage.selectOption('#player', 'white');
-  await coachPage.fill('#pgn', '1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. c3 Nf6 5. d3 d6'); await coachPage.click('#analyze');
+  await fillPgn(coachPage, '1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. c3 Nf6 5. d3 d6'); await analyzePgn(coachPage);
   await coachPage.waitForFunction(() => document.querySelector('#engineStatus').dataset.state === 'running');
-  await coachPage.click('#reviewAction');
+  await reviewAction(coachPage);
   await coachPage.click('#coachTab'); assert.equal(await coachPage.textContent('#coachGameCount'), '2');
-  await coachPage.click('#reviewTab'); await coachPage.selectOption('#quality', 'quick'); await coachPage.click('#reviewAction');
+  await coachPage.click('#reviewTab'); await coachPage.selectOption('#quality', 'quick'); await reviewAction(coachPage);
   await coachPage.waitForFunction(() => document.querySelector('#gameCoachStatus').textContent.includes('profile has been updated'));
   await coachPage.click('#coachTab'); assert.equal(await coachPage.textContent('#coachGameCount'), '3');
   const concurrentReports = await coachPage.evaluate(async () => {
@@ -392,7 +412,7 @@ try {
   });
   assert.equal(concurrentReports.count, 3); assert.equal(concurrentReports.after, concurrentReports.original);
   await coachPage.click('#reviewTab'); await coachPage.selectOption('#player', 'auto');
-  await coachPage.fill('#pgn', '[White "EarthsDirtiest"]\n[Black "Rival"]\n\n1. d4 d5'); await coachPage.click('#analyze');
+  await fillPgn(coachPage, '[White "EarthsDirtiest"]\n[Black "Rival"]\n\n1. d4 d5'); await analyzePgn(coachPage);
   await coachPage.waitForFunction(() => document.querySelector('#gameCoachStatus').textContent.includes('profile has been updated'));
   await coachPage.click('#coachTab'); assert.equal(await coachPage.textContent('#coachGameCount'), '4');
   // Fast prepared results isolate the example-exclusion rule from a long 110-ply review.
@@ -404,7 +424,7 @@ try {
       return { score:{ type:'cp', value:0 }, bestMove:uci, pv:[uci], depth:1 };
     };
   });
-  await coachPage.click('#reviewTab'); await coachPage.click('#demo');
+  await coachPage.click('#reviewTab'); await exampleGame(coachPage);
   await coachPage.waitForFunction(() => document.querySelector('#engineStatus').dataset.state === 'complete');
   assert.match(await coachPage.textContent('#gameCoachStatus'), /Example game.*will not change/);
   await coachPage.click('#coachTab'); assert.equal(await coachPage.textContent('#coachGameCount'), '4');
@@ -417,7 +437,7 @@ try {
   });
   const reportQuotaPage = await reportQuotaContext.newPage(); await reportQuotaPage.goto(url);
   await reportQuotaPage.selectOption('#quality', 'quick'); await reportQuotaPage.selectOption('#player', 'white');
-  await reportQuotaPage.fill('#pgn', '1. e4'); await reportQuotaPage.click('#analyze');
+  await fillPgn(reportQuotaPage, '1. e4'); await analyzePgn(reportQuotaPage);
   await reportQuotaPage.waitForFunction(() => document.querySelector('#gameCoachStatus').textContent.includes('was not saved'));
   assert.equal(await reportQuotaPage.getAttribute('#engineStatus', 'data-state'), 'complete');
   await reportQuotaPage.click('#historyTab'); await reportQuotaPage.waitForFunction(() => document.querySelectorAll('.history-card').length === 1);
@@ -428,7 +448,7 @@ try {
   const historyContext = await browser.newContext(), historyPage = await historyContext.newPage();
   const historyErrors = []; historyPage.on('pageerror', error => historyErrors.push(error.message));
   await historyPage.goto(url); await historyPage.selectOption('#quality', 'quick');
-  await historyPage.fill('#pgn', '1. e5'); await historyPage.click('#analyze');
+  await fillPgn(historyPage, '1. e5'); await analyzePgn(historyPage);
   await historyPage.click('#historyTab');
   await historyPage.waitForFunction(() => document.querySelector('#historyCount').textContent === '0 saved games');
   await historyPage.click('#reviewTab');
@@ -444,7 +464,7 @@ try {
   assert.equal(await historyPage.getAttribute('#reviewTab', 'aria-selected'), 'true');
   assert.equal(await historyPage.inputValue('#pgn'), uploadedPgn);
   await historyPage.selectOption('#quality', 'quick');
-  await historyPage.fill('#pgn', '[White "A changed header"]\n\n1. e4 {comment} e5\n2. Nf3! Nc6 *'); await historyPage.click('#analyze');
+  await fillPgn(historyPage, '[White "A changed header"]\n\n1. e4 {comment} e5\n2. Nf3! Nc6 *'); await analyzePgn(historyPage);
   await historyPage.waitForFunction(() => document.querySelector('#saveStatus').textContent.includes('No duplicate was added'));
   await historyPage.click('#historyTab'); assert.equal(await historyPage.locator('.history-card').count(), 1);
   // Independent database connections race to save the same game: only one insert wins.
@@ -468,7 +488,7 @@ try {
   const quotaContext = await browser.newContext();
   await quotaContext.addInitScript(() => { IDBObjectStore.prototype.add = function () { throw new DOMException('Quota exceeded', 'QuotaExceededError'); }; });
   const quotaPage = await quotaContext.newPage(); await quotaPage.goto(url); await quotaPage.selectOption('#quality', 'quick');
-  await quotaPage.fill('#pgn', '1. e4'); await quotaPage.click('#analyze');
+  await fillPgn(quotaPage, '1. e4'); await analyzePgn(quotaPage);
   await quotaPage.waitForFunction(() => document.querySelector('#saveStatus').textContent.includes('not saved'));
   await quotaPage.waitForFunction(() => document.querySelector('#engineStatus').dataset.state === 'complete');
   await quotaPage.click('#historyTab');
@@ -478,7 +498,7 @@ try {
   const noStorageContext = await browser.newContext();
   await noStorageContext.addInitScript(() => Object.defineProperty(window, 'indexedDB', { get() { throw new DOMException('Storage blocked', 'SecurityError'); } }));
   const noStoragePage = await noStorageContext.newPage(); await noStoragePage.goto(url);
-  await noStoragePage.selectOption('#quality', 'quick'); await noStoragePage.fill('#pgn', '1. e4'); await noStoragePage.click('#analyze');
+  await noStoragePage.selectOption('#quality', 'quick'); await fillPgn(noStoragePage, '1. e4'); await analyzePgn(noStoragePage);
   await noStoragePage.waitForFunction(() => document.querySelector('#engineStatus').dataset.state === 'complete');
   assert.match(await noStoragePage.textContent('#saveStatus'), /not saved/);
   await noStoragePage.click('#historyTab'); assert.match(await noStoragePage.textContent('#historyError'), /unavailable/);
@@ -490,7 +510,7 @@ try {
   const failedPage = await failedContext.newPage();
   await failedPage.goto(url);
   await failedPage.selectOption('#player', 'white');
-  await failedPage.fill('#pgn', '1. e4'); await failedPage.click('#analyze');
+  await fillPgn(failedPage, '1. e4'); await analyzePgn(failedPage);
   await failedPage.waitForFunction(() => document.querySelector('#engineStatus').dataset.state === 'error', null, { timeout:35000 });
   assert.match(await failedPage.textContent('#error'), /could not complete/);
   assert.match(await failedPage.textContent('#reviewed'), /0 \/ 1/);
@@ -500,10 +520,83 @@ try {
   await failedPage.click('[data-ply="1"]');
   assert.match(await failedPage.textContent('#coach'), /Pending/);
   await failedContext.unroute('**/*.wasm');
-  await failedPage.click('#reviewAction');
+  await reviewAction(failedPage);
   await failedPage.waitForFunction(() => document.querySelector('#engineStatus').dataset.state === 'complete');
   await failedContext.close();
   console.log('Missing WASM reports an error, leaves moves pending, and recovers on retry.');
+
+  const layoutContext = await browser.newContext(), layoutPage = await layoutContext.newPage();
+  const layoutErrors = []; layoutPage.on('pageerror', error => layoutErrors.push(error.message));
+  layoutPage.on('response', response => { if (response.status() >= 400) layoutErrors.push(`${response.status()} ${response.url()}`); });
+  await layoutPage.setViewportSize({ width:1440, height:1000 }); await layoutPage.goto(url);
+  async function assertBoard(page, width) {
+    await page.setViewportSize({ width, height:width <= 800 ? 900 : 1000 });
+    await page.waitForFunction(() => [...document.querySelectorAll('#board img')].every(image => image.complete && image.naturalWidth > 0));
+    const geometry = await page.evaluate(() => {
+      const board = document.querySelector('#board'), bounds = board.getBoundingClientRect();
+      const squares = [...board.children].map(square => square.getBoundingClientRect());
+      return { width:bounds.width, height:bounds.height, count:squares.length,
+        widths:squares.map(square => square.width), heights:squares.map(square => square.height),
+        rows:new Set(squares.map(square => square.y.toFixed(2))).size, columns:new Set(squares.map(square => square.x.toFixed(2))).size,
+        rowSizes:getComputedStyle(board).gridTemplateRows.split(' ').length, columnSizes:getComputedStyle(board).gridTemplateColumns.split(' ').length,
+        overflow:document.documentElement.scrollWidth > innerWidth,
+        pieces:[...board.querySelectorAll('img')].map(image => image.getAttribute('src')),
+        css:getComputedStyle(document.body).backgroundColor,
+      };
+    });
+    assert.equal(geometry.count, 64); assert.equal(geometry.rows, 8); assert.equal(geometry.columns, 8);
+    assert.equal(geometry.rowSizes, 8); assert.equal(geometry.columnSizes, 8);
+    assert.ok(Math.abs(geometry.width - geometry.height) < .2, `Square board at ${width}: ${geometry.width} × ${geometry.height}`);
+    assert.ok(geometry.width > Math.min(250, width - 80));
+    assert.ok(geometry.widths.every(value => Math.abs(value - geometry.width / 8) < .2));
+    assert.ok(geometry.heights.every(value => Math.abs(value - geometry.height / 8) < .2));
+    assert.equal(geometry.overflow, false, `Horizontal overflow at ${width}`);
+    assert.equal(geometry.css, 'rgb(9, 19, 27)');
+    assert.ok(geometry.pieces.every(src => /vendor\/pieces\/[wb][KQRBNP]\.svg$/.test(src)));
+  }
+  for (const width of [320,390,589,768,1024,1280,1440,1920]) await assertBoard(layoutPage, width);
+  await layoutPage.locator('#reviewTab').focus(); await layoutPage.keyboard.press('ArrowDown');
+  assert.equal(await layoutPage.getAttribute('#historyTab', 'aria-selected'), 'true');
+  await layoutPage.keyboard.press('Home'); assert.equal(await layoutPage.getAttribute('#reviewTab', 'aria-selected'), 'true');
+  assert.equal(await layoutPage.textContent('#liveEvaluation'), '—');
+  assert.equal(await layoutPage.locator('#evaluationChart path').count(), 0);
+  await layoutPage.setViewportSize({ width:1440, height:1000 });
+  await layoutPage.selectOption('#quality', 'quick'); await layoutPage.selectOption('#player', 'white');
+  await fillPgn(layoutPage, '[Event "Midnight review"]\n[White "EarthsDirtiest"]\n[Black "Training partner"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bc4 Nf6 4. d3 Bc5 5. O-O d6 6. c3 O-O 7. Re1 a6 8. Bb3 Ba7 9. Nbd2 h6 10. Nf1 Be6 11. Ng3 d5 12. Nxe5 Nxe5');
+  await analyzePgn(layoutPage);
+  await layoutPage.waitForFunction(() => document.querySelector('#gameCoachStatus').textContent.includes('profile has been updated'), null, { timeout:35000 });
+  assert.equal(await layoutPage.$eval('#importDialog', element => element.open), false);
+  await layoutPage.click('[data-ply="12"]');
+  assert.equal(await layoutPage.textContent('#liveEvaluation'), await layoutPage.textContent('#evaluation'));
+  assert.ok(await layoutPage.locator('#evaluationChart path').count());
+  assert.match(await layoutPage.textContent('#summaryScore'), /\d+%/);
+  assert.equal(await layoutPage.locator('.move-row').count(), 12);
+  const whiteFiles = await layoutPage.textContent('#coords');
+  await layoutPage.click('#flipBoard'); assert.notEqual(await layoutPage.textContent('#coords'), whiteFiles);
+  assert.equal(await layoutPage.inputValue('#player'), 'white');
+  await layoutPage.click('#flipBoard'); assert.equal(await layoutPage.textContent('#coords'), whiteFiles);
+  await layoutPage.click('#showLine'); assert.equal(await layoutPage.locator('#coach .continuation').isVisible(), true);
+  await layoutPage.locator('#evaluationChart').focus(); await layoutPage.keyboard.press('ArrowRight');
+  assert.equal(await layoutPage.textContent('#step'), '13 / 24');
+  await layoutPage.click('#playMoves');
+  await layoutPage.waitForFunction(() => document.querySelector('#step').textContent !== '13 / 24');
+  await layoutPage.click('#playMoves'); assert.equal(await layoutPage.getAttribute('#playMoves', 'aria-label'), 'Play through game');
+  await layoutPage.click('[data-ply="23"]'); await layoutPage.evaluate(() => scrollTo(0, 0)); await layoutPage.screenshot({ path:'test-results/midnight-desktop.png', fullPage:true });
+  for (const width of [320,390,589,768,1024,1440,1920]) await assertBoard(layoutPage, width);
+  await layoutPage.setViewportSize({ width:390, height:900 });
+  await layoutPage.click('#coachPanelTab'); assert.equal(await layoutPage.locator('#coachPane').isVisible(), true);
+  assert.equal(await layoutPage.locator('#movesPanel').isVisible(), false);
+  await layoutPage.click('#movesPanelTab'); await layoutPage.click('[data-ply="23"]');
+  assert.equal(await layoutPage.textContent('#step'), '23 / 24');
+  await layoutPage.click('#enginePanelTab'); assert.equal(await layoutPage.locator('#engineTop').isVisible(), true);
+  assert.equal(await layoutPage.textContent('#mobileEvaluation'), await layoutPage.textContent('#liveEvaluation'));
+  await layoutPage.click('#coachPanelTab'); assert.equal(await layoutPage.locator('#engineTop').isVisible(), false);
+  await layoutPage.evaluate(() => { document.activeElement?.blur(); scrollTo(0, 0); });
+  await layoutPage.screenshot({ path:'test-results/midnight-mobile.png', fullPage:true });
+  await layoutPage.click('#menuToggle'); assert.equal(await layoutPage.locator('#mobileMenu').isVisible(), true);
+  await layoutPage.keyboard.press('Escape'); assert.equal(await layoutPage.locator('#mobileMenu').isVisible(), false);
+  assert.deepEqual(layoutErrors, []); await layoutContext.close();
+  console.log('Midnight UI: real data, playback, independent flip, show line, interactive chart, mobile panels, SVG graphics and exact 8×8 square geometry at 320–1920px passed.');
   console.log('Browser smoke tests passed.');
 } finally {
   await browser?.close();

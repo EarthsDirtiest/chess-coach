@@ -4,8 +4,9 @@ import { practiceDrills } from './practice-library.js';
 const $ = id => document.getElementById(id);
 const node = (tag, text, className) => { const item = document.createElement(tag); item.textContent = text; if (className) item.className = className; return item; };
 export class CoachProfileUI {
-  constructor({ store, onPractice, onEvidence }) {
+  constructor({ store, onPractice, onEvidence, onUpdate = () => {} }) {
     this.store = store; this.onPractice = onPractice; this.onEvidence = onEvidence;
+    this.onUpdate = onUpdate;
     this.profile = buildProfile([]); this.context = {}; this.latest = null; this.saveVersion = 0; this.listVersion = 0; this.signature = null;
     this.renderProfile(); void this.refresh();
     window.addEventListener('focus', () => { void this.refresh(); });
@@ -101,5 +102,6 @@ export class CoachProfileUI {
       row.append(cell, node('td', report.side === 'white' ? 'White' : 'Black'), node('td', String(report.ownMoves)), node('td', `${report.score}/100`)); return row;
     }));
     $('coachTimelineEmpty').hidden = profile.count > 0;
+    this.onUpdate();
   }
 }
