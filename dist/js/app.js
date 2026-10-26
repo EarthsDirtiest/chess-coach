@@ -20,6 +20,11 @@ function selectedSide(headers) {
   return headers.White?.toLowerCase() === 'earthsdirtiest' ? 'white' : 'black';
 }
 function isOwn(state) { return Boolean(state.move) && state.black === (side === 'black'); }
+function recommendationLabel(state) {
+  if (!state.move) return 'A line to explore';
+  const sameBest = state.move.uci === game.analyses[state.ply - 1]?.bestMove;
+  return isOwn(state) ? (sameBest ? 'A line to explore' : 'Try this instead') : (sameBest ? 'Their continuation' : 'Their better option');
+}
 function disposeEngine(value) { if (value) value.dispose(); }
 function cancelReview(nextPhase = 'paused') {
   runVersion++;
@@ -86,7 +91,7 @@ function renderEngine() {
 }
 function render() {
   const state = game?.states[ply] || { board:start(), ply:0, move:null };
-  const board = state.board, flip = side === 'black', coaching = game ? coachMove(game, ply) : null;
+  const board = state.board, flip = side === 'black', coaching = game ? coachMove(game, ply, side) : null;
   const boardFragment = document.createDocumentFragment();
   for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
     const xx = flip ? 7 - x : x, yy = flip ? 7 - y : y, piece = board[yy][xx], square = document.createElement('div');
@@ -112,12 +117,12 @@ function render() {
   const analysis = game?.analyses[ply];
   $('evaluation').textContent = analysis ? formatScore(analysis.score) : 'Pending';
   $('searchDepth').textContent = analysis ? (analysis.terminal ? 'Terminal position' : `Depth ${analysis.depth}`) : 'Awaiting Stockfish';
-  $('coach').innerHTML = coaching ? `<div class="row between"><div class="eyebrow">COACHING</div><span class="pill">${escapeHTML(coaching.level)}</span></div><h3>${escapeHTML(coaching.title)}</h3><p>${escapeHTML(coaching.body)}</p>${coaching.bestMoveSan ? `<div class="note"><strong>${ply ? 'Engine recommendation before this move' : 'Engine suggestion'}: ${escapeHTML(coaching.bestMoveSan)}</strong>${coaching.pvSan.length ? `<div class="continuation">${escapeHTML(coaching.pvSan.join(' '))}</div>` : ''}</div>` : ''}${isOwn(state) ? '<div class="review-note">Your move</div>' : ''}` : '<div class="eyebrow">YOUR PERSONAL COACH</div><h3>Load a PGN to begin</h3><p>Choose a move to see its engine evaluation and a continuation to study.</p>';
+  $('coach').innerHTML = coaching ? `<div class="row between"><div class="eyebrow">COACHING</div><span class="pill">${escapeHTML(coaching.level)}</span></div><h3>${escapeHTML(coaching.title)}</h3><p>${escapeHTML(coaching.body)}</p>${coaching.bestMoveSan ? `<div class="note"><strong>${recommendationLabel(state)}: ${escapeHTML(coaching.bestMoveSan)}</strong>${coaching.pvSan.length ? `<div class="continuation">${escapeHTML(coaching.pvSan.join(' '))}</div>` : ''}</div>` : ''}${isOwn(state) ? '<div class="review-note">Your move</div>' : ''}` : '<div class="eyebrow">YOUR PERSONAL COACH</div><h3>Load a PGN to begin</h3><p>Choose a move to learn what it changed, spot a danger, and explore another idea.</p>';
   $('count').textContent = `${total} half-moves`;
   if (game) {
     const scrollTop = $('moves').scrollTop;
     $('moves').innerHTML = game.states.slice(1).map(move => {
-      const c = coachMove(game, move.ply), pending = !game.analyses[move.ply - 1] || !game.analyses[move.ply];
+      const c = coachMove(game, move.ply, side), pending = !game.analyses[move.ply - 1] || !game.analyses[move.ply];
       const flagged = ['Mistake','Blunder'].includes(c.level);
       return `<button class="move ${ply === move.ply ? 'selected' : ''} ${isOwn(move) ? 'own' : ''} ${pending ? 'pending' : ''} ${flagged ? 'flagged' : ''}" data-ply="${move.ply}" aria-current="${ply === move.ply ? 'step' : 'false'}" title="${escapeHTML((move.black ? 'Black' : 'White') + ': ' + c.level)}">${escapeHTML(moveLabel(move))}</button>`;
     }).join('');
@@ -127,7 +132,9 @@ function render() {
     $('players').textContent = `${game.headers.White || 'White'} vs ${game.headers.Black || 'Black'}`;
     const summary = summarizeGame(game, side), pending = summary.total - summary.reviewed;
     $('reviewed').textContent = `${summary.reviewed} / ${summary.total} of your moves reviewed`;
-    $('priorities').innerHTML = `<div class="analysis-row"><strong>Engine mistakes</strong><span>${summary.mistakes} mistakes · ${summary.blunders} blunders among ${summary.reviewed} reviewed moves.</span></div><div class="analysis-row"><strong>Average evaluation loss</strong><span>${summary.averageLossCp == null ? 'Awaiting reviewed moves' : `${(summary.averageLossCp / 100).toFixed(2)} pawns (mate transitions excluded)`}. Estimates depend on search depth.</span></div><div class="analysis-row"><strong>${pending ? 'Review in progress' : 'Practice your alternatives'}</strong><span>${pending ? `${pending} of your moves are pending. They are excluded from these statistics.` : 'Revisit mistakes and compare the played move with the engine continuation.'}</span></div>`;
+    $('lossSummary').textContent = summary.averageLossCp == null ? 'Average evaluation loss: awaiting reviewed moves.' : `Average evaluation loss: ${(summary.averageLossCp / 100).toFixed(2)} pawns (mate transitions excluded). Estimates depend on search depth.`;
+    const hasMistakes = summary.mistakes + summary.blunders > 0;
+    $('priorities').innerHTML = `<div class="analysis-row"><strong>Moves to revisit</strong><span>${summary.mistakes} mistakes · ${summary.blunders} blunders among ${summary.reviewed} reviewed moves.</span></div><div class="analysis-row"><strong>${pending ? 'More moves to review' : hasMistakes ? 'Turn a mistake into a lesson' : 'Build on what worked'}</strong><span>${pending ? `${pending} of your moves are still waiting for review. You can explore the board at any time.` : hasMistakes ? 'Choose a mistake, notice the danger, then compare your move with the suggested alternative.' : 'Pick a good move and explain how it helped. Repeat that habit in your next game.'}</span></div>`;
   } else $('moves').innerHTML = '<div class="empty">Your move list will appear here.</div>';
   $('copy').disabled = !game;
   renderEngine();
@@ -148,8 +155,8 @@ $('copy').onclick = async () => {
   if (!game) return;
   const summary = summarizeGame(game, side), completed = game.analyses.filter(Boolean);
   const report = `Chess Coach / Stockfish review: ${game.headers.White || 'White'} vs ${game.headers.Black || 'Black'}\nReviewed side: ${side}\nPositions reviewed: ${completed.length} / ${game.states.length}; engine evaluations: ${completed.filter(analysis => !analysis.terminal).length}\nYour moves reviewed: ${summary.reviewed} / ${summary.total}; pending: ${summary.total - summary.reviewed}\nMistakes: ${summary.mistakes}; blunders: ${summary.blunders}\nEvaluations are from White's viewpoint and use finite search depth. Pending moves are excluded from statistics.\n\n` + game.states.filter(isOwn).map(state => {
-    const c = coachMove(game, state.ply), analysis = game.analyses[state.ply];
-    return `${moveLabel(state)} — ${c.level}: ${c.body}\nPosition evaluation: ${analysis ? formatScore(analysis.score) + '; depth ' + analysis.depth : 'Pending'}${c.bestMoveSan ? '\nEngine recommendation: ' + c.bestMoveSan : ''}${c.pvSan.length ? '\nContinuation: ' + c.pvSan.join(' ') : ''}`;
+    const c = coachMove(game, state.ply, side), analysis = game.analyses[state.ply];
+    return `${moveLabel(state)} — ${c.level}: ${c.body}\nPosition evaluation: ${analysis ? formatScore(analysis.score) + '; depth ' + analysis.depth : 'Pending'}${c.bestMoveSan ? '\n' + recommendationLabel(state) + ': ' + c.bestMoveSan : ''}${c.pvSan.length ? '\nContinuation: ' + c.pvSan.join(' ') : ''}`;
   }).join('\n\n');
   try { await navigator.clipboard.writeText(report); $('copy').textContent = 'Copied!'; setTimeout(() => $('copy').textContent = 'Copy coaching report', 1800); }
   catch { $('error').textContent = 'Clipboard not available in this browser.'; }

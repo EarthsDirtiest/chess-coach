@@ -76,7 +76,7 @@ test('coach does not grade pending positions and summary counts completed pairs 
   game.analyses[1] = result(-250, 'd7d5', ['d7d5', 'c2c4']);
   assert.equal(coachMove(game, 1).level, 'Blunder');
   assert.equal(coachMove(game, 1).bestMoveSan, 'e4');
-  assert.match(coachMove(game, 1).body, /best calculated reply is d5/);
+  assert.match(coachMove(game, 1).body, /Try e4 instead: it puts a pawn in the center/);
   assert.deepEqual(summarizeGame(game, 'white'), { reviewed: 1, total: 1, mistakes: 0, blunders: 1, averageLossCp: 270 });
   assert.equal(summarizeGame(game, 'black').reviewed, 0);
 });
@@ -124,7 +124,7 @@ test('stalemating a won position retains the error grade and summary count', () 
   game.analyses[1] = terminalAnalysis(game.states[1]);
   const coach = coachMove(game, 1);
   assert.equal(coach.level, 'Blunder'); assert.equal(coach.outcome, 'Draw'); assert.equal(coach.lossCp, null);
-  assert.match(coach.body, /drawn by stalemate/); assert.equal(summarizeGame(game, 'white').blunders, 1);
+  assert.match(coach.body, /no legal move but not in check.*stalemate/); assert.equal(summarizeGame(game, 'white').blunders, 1);
   game.analyses[0] = result(150, 'g5h5', ['g5h5']);
   assert.equal(coachMove(game, 1).level, 'Mistake'); assert.equal(summarizeGame(game, 'white').mistakes, 1);
 });
@@ -138,9 +138,9 @@ test('mate zero preserves each winner; incomplete analysis stays pending', () =>
 test('reply explanations describe verified captures and checkmate', () => {
   const game = parseGame(setupGame('3r2k1/5ppp/8/8/8/8/3R1PPP/6K1 w - - 0 1', '1. Kh1'));
   game.analyses[0] = result(0, 'd2d8', ['d2d8']); game.analyses[1] = result(-500, 'd8d2', ['d8d2']);
-  assert.match(coachMove(game, 1).body, /capturing the rook/);
+  assert.match(coachMove(game, 1).body, /take White’s rook on d2 with Rxd2/);
   const mate = parseGame('1. f3 e5 2. g4');
   mate.analyses[2] = result(-100, 'g1f3', ['g1f3']);
   mate.analyses[3] = { score:{ type:'mate', value:-1 }, bestMove:'d8h4', pv:['d8h4'], depth:16 };
-  assert.match(coachMove(mate, 3).body, /delivering checkmate/);
+  assert.match(coachMove(mate, 3).body, /Qh4#, checkmating White’s king/);
 });
