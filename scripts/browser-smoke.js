@@ -4,6 +4,7 @@ import { readFile, mkdir } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
 import { chromium } from 'playwright';
 import { openingDrills, puzzleDrills } from '../dist/js/practice-library.js';
+import { Chess } from '../dist/vendor/chess.js/chess.js';
 
 async function openImport(page) {
   if (await page.$eval('#importDialog', element => element.open)) return;
@@ -60,15 +61,16 @@ try {
   await page.click('[data-category="openings"]');
   assert.equal(await page.locator('[data-practice-group]:visible').count(), 1);
   assert.equal(await page.locator('[data-practice-group="openings"]').isVisible(), true);
-  assert.equal(await page.locator('[data-practice-group="openings"] [data-drill]').count(), 3);
+  assert.equal(await page.locator('[data-practice-group="openings"] [data-drill]').count(), 30);
   await page.click('[data-category="puzzles"]');
   assert.equal(await page.locator('[data-practice-group="puzzles"]').isVisible(), true);
-  assert.equal(await page.locator('[data-practice-group="puzzles"] [data-drill]').count(), 3);
+  assert.equal(await page.locator('[data-practice-group="puzzles"] [data-drill]').count(), 30);
   for (const drill of [...openingDrills, ...puzzleDrills]) {
     await page.click(`[data-category="${drill.kind === 'opening' ? 'openings' : 'puzzles'}"]`);
     await page.click(`[data-drill="${drill.id}"]`);
     assert.equal(await page.textContent('#practiceSolution'), '');
     assert.equal(await page.locator('#practiceInstruction').isVisible(), true);
+    assert.equal(await page.textContent('#practiceGoal'), `Learning goal: ${drill.learningGoal}`);
     if (drill.id === 'italian') {
       await page.click('[data-square="d2"]'); await page.click('[data-square="d4"]');
       assert.match(await page.textContent('#practiceStatus'), /legal move.*specific opening line/);
@@ -77,9 +79,11 @@ try {
     await page.click('#practiceSolutionToggle');
     assert.match(await page.textContent('#practiceSolution'), /Practice line from here/);
     await page.click('#practiceRestart'); assert.equal(await page.textContent('#practiceSolution'), '');
-    for (let i = drill.side === 'white' ? 0 : 1; i < drill.line.length; i += 2) {
+    const initialSide = new Chess(drill.fen).turn() === 'w' ? 'white' : 'black';
+    for (let i = drill.side === initialSide ? 0 : 1; i < drill.line.length; i += 2) {
       const token = drill.line[i];
       await page.click(`[data-square="${token.slice(0, 2)}"]`); await page.click(`[data-square="${token.slice(2, 4)}"]`);
+      if (token[4]) await page.click(`[data-promotion="${token[4]}"]`);
     }
     assert.equal(await page.getAttribute('#practicePanel', 'data-state'), 'won', drill.id);
     assert.match(await page.textContent('#practiceStatus'), drill.kind === 'opening' ? /Opening line complete/ : /Puzzle solved/);
@@ -87,7 +91,7 @@ try {
     await page.click('#practiceReturn');
   }
   await page.click('[data-category="checkmates"]');
-  assert.equal(await page.locator('[data-practice-group="checkmates"] [data-drill]').count(), 3);
+  assert.equal(await page.locator('[data-practice-group="checkmates"] [data-drill]').count(), 30);
   assert.match(await page.textContent('#practiceGameStatus'), /Review a game/);
   for (const [drill, from, to] of [['mate-one-white', 'e1', 'e8'], ['mate-one-black', 'e8', 'e1']]) {
     await page.click(`[data-drill="${drill}"]`);
@@ -102,17 +106,32 @@ try {
     assert.equal(await page.getAttribute('[data-category="checkmates"]', 'aria-pressed'), 'true');
   }
   await page.click('[data-category="all"]');
+  assert.equal(await page.textContent('#practiceCount'), '90 of 90 practices shown');
+  await page.selectOption('#practiceSubject', 'fork');
+  assert.equal(await page.locator('.practice-card:visible [data-drill]').count(), 3);
+  await page.fill('#practiceSearch', 'queen');
+  assert.equal(await page.locator('.practice-card:visible [data-drill]').count(), 2);
+  await page.fill('#practiceSearch', 'no matching practice');
+  assert.equal(await page.locator('#practiceEmpty').isVisible(), true);
+  await page.fill('#practiceSearch', ''); await page.selectOption('#practiceSubject', 'all');
+  await page.selectOption('#practiceDifficulty', 'intermediate');
+  assert.ok(await page.locator('.practice-card:visible [data-drill]').count() > 0);
+  await page.selectOption('#practiceDifficulty', 'all');
   await page.setViewportSize({ width:390, height:844 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await mkdir('test-results', { recursive:true });
+  await page.selectOption('#practiceSubject', 'fork');
   await page.screenshot({ path:'test-results/practice-hub-mobile.png', fullPage:true });
+  await page.selectOption('#practiceSubject', 'all');
   await page.setViewportSize({ width:1280, height:900 });
+  await page.selectOption('#practiceSubject', 'fork');
   await page.screenshot({ path:'test-results/practice-hub-desktop.png', fullPage:true });
+  await page.selectOption('#practiceSubject', 'all');
   await page.locator('#practiceTab').focus(); await page.keyboard.press('Home');
   assert.equal(await page.getAttribute('#reviewTab', 'aria-selected'), 'true');
   assert.equal(await page.textContent('#step'), '0 / 0');
   assert.equal(await page.textContent('#pgn'), '');
-  console.log('Practice library: all three openings, all three puzzles, checkmates for both colors, solutions, takebacks, keyboard and mobile layout passed.');
+  console.log('Practice library: all 30 openings and 30 puzzles, goals, subject/search/level filters, checkmates for both colors, solutions, takebacks, keyboard and mobile layout passed.');
   assert.equal(await page.locator('#tryMate').isVisible(), false);
   assert.equal(await page.$eval('#engineDetails', element => element.open), false);
   assert.equal(await page.locator('#evaluation').isVisible(), false);
@@ -132,6 +151,20 @@ try {
   assert.deepEqual(tactical.black.score, { type: 'mate', value: -1 });
   assert.ok(requested.includes(prefix + 'vendor/stockfish/stockfish-19-lite-single.wasm'));
   console.log('Real Stockfish WASM finds mate for both colors with White-normalized scores under a project URL.');
+  const mateResults = await page.evaluate(async () => {
+    const { StockfishEngine } = await import('./js/stockfish-engine.js');
+    const { mateDrills } = await import('./js/practice-library.js');
+    const engine = new StockfishEngine(), results = [];
+    try {
+      for (const drill of mateDrills) {
+        const analysis = await engine.analyze({ fen:drill.fen, depth:20, moveTimeMs:500 });
+        results.push({ id:drill.id, actual:analysis.score, expected:drill.analysis.score });
+      }
+    } finally { engine.dispose(); }
+    return results;
+  });
+  for (const result of mateResults) assert.deepEqual(result.actual, result.expected, result.id);
+  console.log('All 30 curated mate positions confirmed by the real Stockfish engine.');
 
   const waitForPhase = phase => page.waitForFunction(value => document.querySelector('#engineStatus').dataset.state === value, phase);
   await page.selectOption('#quality', 'quick');
@@ -360,6 +393,7 @@ try {
   await coachPage.click('#coachTab'); assert.equal(await coachPage.textContent('#coachGameCount'), '1');
   assert.equal(await coachPage.textContent('#coachMoveCount'), '2');
   assert.match(await coachPage.locator('#coachPriorities h3').first().textContent(), /Spot mating threats/);
+  assert.match(await coachPage.locator('#coachPriorities .recommended-practice').first().textContent(), /Learning goal: Recognize a back-rank mate/);
   assert.match(await coachPage.textContent('#coachEvidence'), /Early estimate/);
   const firstReport = await coachPage.evaluate(async () => {
     const { GameHistory } = await import('./js/game-history.js'); return (await new GameHistory().listReports())[0];

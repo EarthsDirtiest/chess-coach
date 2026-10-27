@@ -204,6 +204,15 @@ and [Sicilian Najdorf](https://lichess.org/opening/Sicilian_Defense_Najdorf_Vari
 
 ## Verify
 
+The practice library contains **90 exercises: 30 openings, 30 checkmates and
+30 puzzles**. Each card and session shows a specific learning goal. Search,
+subject and level filters help find an exercise. Coach recommendations use
+the exercises' skill and subject tags, ranked beneath the existing highest
+impact weaknesses from analyzed games. Existing reports remain compatible.
+Practice completion does not inflate the game-based score. See
+[practice sources and metadata](dist/data/PRACTICE-SOURCES.md) for attribution
+and the exercise schema.
+
 ```sh
 npm test
 npx playwright install chromium

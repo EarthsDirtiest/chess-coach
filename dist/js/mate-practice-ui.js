@@ -28,6 +28,8 @@ export class MatePracticeUI {
     this.close(); this.resetInput();
     this.title = title; this.returnLabel = returnLabel;
     this.kind = drill?.kind || 'mate';
+    this.learningGoal = drill?.learningGoal || '';
+    this.intro = drill?.intro || '';
     this.session = ['opening', 'puzzle'].includes(this.kind) ? new LinePractice({ drill, onChange:() => this.render() })
       : new MatePractice({ ...options, onChange:() => this.render() });
     document.body.classList.add('practice-mode'); $('practicePanel').hidden = false;
@@ -65,8 +67,10 @@ export class MatePracticeUI {
     $('gameTitle').textContent = this.kind === 'opening' ? 'OPENING PRACTICE' : this.kind === 'puzzle' ? 'PUZZLE PRACTICE' : 'CHECKMATE PRACTICE';
     $('positionTitle').textContent = this.title;
     $('practiceTitle').textContent = this.kind === 'opening' ? 'Build the opening' : this.kind === 'puzzle' ? 'Find the tactic' : 'Find the checkmate';
-    $('practiceInstruction').hidden = !state.instruction;
-    $('practiceInstruction').textContent = state.instruction || '';
+    $('practiceInstruction').hidden = !(state.instruction || this.intro);
+    $('practiceInstruction').textContent = state.instruction || this.intro;
+    $('practiceGoal').hidden = !this.learningGoal;
+    $('practiceGoal').textContent = this.learningGoal ? `Learning goal: ${this.learningGoal}` : '';
     $('practiceReturn').textContent = this.returnLabel;
     $('sideLabel').textContent = `You play ${title(state.attacker)}`;
     $('practiceStatus').textContent = state.message;

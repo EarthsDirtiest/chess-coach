@@ -101,8 +101,11 @@ test('only the latest ten unique reviews inform current priorities, scores use t
 });
 
 test('every skill maps to available practice and opening recommendation follows the reviewed side', () => {
-  for (const skill of Object.values(skills)) for (const id of skill.drills) assert.ok(practiceDrills.some(drill => drill.id === id), id);
+  for (const key of Object.keys(skills)) assert.ok(practiceDrills.some(drill => drill.targetSkills.includes(key)), key);
   const game = ready('1. d4'); game.analyses = [cp(0, 'e2e4'), cp(-100, 'd7d5')];
   const saved = { ...buildGameReport(game, 'white', 'quick'), firstReviewedAt:1 };
-  assert.deepEqual(buildProfile([saved]).priorities[0].drills, ['queens-gambit']);
+  const recommendations = buildProfile([saved]).priorities[0].drills;
+  assert.equal(recommendations[0], 'queens-gambit');
+  assert.equal(recommendations.length, 3);
+  for (const id of recommendations) assert.ok(practiceDrills.find(drill => drill.id === id).targetSkills.includes('opening'));
 });

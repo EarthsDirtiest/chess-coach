@@ -33,6 +33,7 @@
   <button class="primary full mate-entry" id="tryMate" hidden><span data-icon="target"></span>Try the checkmate</button>
   <section class="practice-panel" id="practicePanel" aria-labelledby="practiceTitle" hidden>
   <div class="eyebrow">YOUR TURN TO FIND IT</div><h2 id="practiceTitle">Find the checkmate</h2>
+  <p class="practice-goal" id="practiceGoal" hidden></p>
   <p class="practice-instruction" id="practiceInstruction" hidden></p>
   <p class="practice-status" id="practiceStatus" role="status" aria-live="polite" aria-atomic="true"></p>
   <div class="promotion-choice" id="practicePromotion" role="group" aria-labelledby="practicePromotionLabel" hidden>
@@ -61,9 +62,12 @@
 </main>
 <main id="practiceView" role="tabpanel" aria-labelledby="practiceTab" hidden>
  <div class="practice-home" id="practiceHub">
-  <div class="practice-intro"><div class="eyebrow">BUILD YOUR CHESS HABITS</div><h1>A little practice.<br>A stronger next game.</h1><p>Nine practices. Three ways to improve. Build an opening, finish a mating attack, or spot a tactic.</p></div>
+  <div class="practice-intro"><div class="eyebrow">BUILD YOUR CHESS HABITS</div><h1>A little practice.<br>A stronger next game.</h1><p>90 practices. 30 openings, 30 checkmates, 30 puzzles. Every exercise has a learning goal to help you build the habits your games need.</p></div>
   <section class="practice-recommendations" aria-labelledby="recommendedHeading"><div class="eyebrow">BASED ON YOUR REVIEWED GAMES</div><h2 id="recommendedHeading">Your next practice</h2><div class="practice-cards coach-priorities" id="practiceRecommendations"></div></section>
   <div class="category-filters" role="group" aria-label="Practice categories"><button class="category-filter" data-category="all" aria-pressed="true">All categories</button><button class="category-filter" data-category="openings" aria-pressed="false">Openings</button><button class="category-filter" data-category="checkmates" aria-pressed="false">Checkmates</button><button class="category-filter" data-category="puzzles" aria-pressed="false">Puzzles</button></div>
+  <div class="practice-filters"><label>Find a practice<input id="practiceSearch" type="search" placeholder="Search a goal, opening or tactic"></label><label>Subject<select id="practiceSubject"><option value="all">All subjects</option></select></label><label>Level<select id="practiceDifficulty"><option value="all">All levels</option><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option></select></label></div>
+  <p class="hint" id="practiceCount" role="status" aria-live="polite"></p>
+  <p id="practiceEmpty" hidden>No practices match these filters. Try another subject or clear your search.</p>
   <div class="error" id="practiceHubError" role="alert"></div>
   <section class="practice-group" data-practice-group="openings" aria-labelledby="openingsHeading">
    <div class="practice-group-heading"><span class="category-icon" aria-hidden="true">♙</span><div><h2 id="openingsHeading">Openings</h2><p>Build a position you know how to play.</p></div></div>
