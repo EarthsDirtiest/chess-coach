@@ -12,7 +12,7 @@ export class AnalysisWorkspace {
     hydrateIcons(); this.chart = new EvaluationChart($('evaluationChart'), onNavigate);
     $('flipBoard').onclick = onFlip;
     $('playMoves').onclick = () => this.togglePlayback();
-    $('openImport').onclick = $('mobileImport').onclick = () => this.openImport();
+    $('openImport').onclick = $('mobileImport').onclick = $('importNextGame').onclick = () => this.openImport();
     $('closeImport').onclick = () => $('importDialog').close();
     $('coach').addEventListener('click', event => { if (event.target.closest('[data-open-import]')) this.openImport(); });
     this.errorObserver = new MutationObserver(() => text('importError', $('error').textContent));
@@ -48,7 +48,7 @@ export class AnalysisWorkspace {
   }
   closeMenu() { $('mobileMenu').hidden = true; $('menuToggle').setAttribute('aria-expanded', 'false'); }
   openImport() { if (document.body.classList.contains('practice-mode')) return; this.stopPlayback(); this.closeMenu(); if (!$('importDialog').open) $('importDialog').showModal(); $('pgn').focus(); }
-  setPractice(active) { this.stopPlayback(); $('openImport').disabled = active; $('mobileImport').disabled = active; }
+  setPractice(active) { this.stopPlayback(); for (const id of ['openImport','mobileImport','importNextGame']) $(id).disabled = active; }
   setPanel(panel) {
     document.body.dataset.analysisPanel = panel;
     for (const button of document.querySelectorAll('#analysisTabs [data-analysis-panel]')) {
@@ -101,6 +101,7 @@ export class AnalysisWorkspace {
     text('liveDepth', analysis ? analysis.terminal ? 'Terminal position' : `Depth ${analysis.depth}` : 'Awaiting Stockfish');
     const status = { idle:'Ready to analyze', loading:'Loading Stockfish', running:'Analyzing game', paused:'Review paused', complete:'Analysis complete', error:'Engine unavailable' };
     text('headerStatus', status[phase]);
+    $('importNextGame').hidden = !game || phase !== 'complete';
     text('headerDepth', analysis && !analysis.terminal ? `Stockfish · Depth ${analysis.depth}` : 'Stockfish · local engine');
     $('engineBadge').dataset.state = phase;
     text('profileName', game?.headers[side === 'white' ? 'White' : 'Black'] || 'Your profile');

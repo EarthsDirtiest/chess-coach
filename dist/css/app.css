@@ -1709,6 +1709,8 @@ a {
     background:var(--green)
   }
   .page-heading {
+    display:grid;
+    grid-template-columns:minmax(0,1fr) auto;
     gap:8px;
     align-items:center
   }
@@ -1721,7 +1723,7 @@ a {
     display:none
   }
   .header-actions {
-    gap:0
+    display:contents
   }
   .engine-badge {
     border:0;
@@ -1752,8 +1754,15 @@ a {
     width:12px;
     height:12px
   }
-  .profile-button,.import-trigger {
+  .profile-button {
     display:none
+  }
+  .import-trigger {
+    display:flex;
+    grid-column:1/-1;
+    justify-content:center;
+    min-height:44px;
+    margin-top:4px
   }
   .mobile-menu {
     position:absolute;

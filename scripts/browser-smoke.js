@@ -629,6 +629,24 @@ try {
   await layoutPage.screenshot({ path:'test-results/midnight-mobile.png', fullPage:true });
   await layoutPage.click('#menuToggle'); assert.equal(await layoutPage.locator('#mobileMenu').isVisible(), true);
   await layoutPage.keyboard.press('Escape'); assert.equal(await layoutPage.locator('#mobileMenu').isVisible(), false);
+  for (const [index, width] of [1440,768,390,320].entries()) {
+    await layoutPage.setViewportSize({ width, height:900 });
+    assert.equal(await layoutPage.locator('#openImport').isVisible(), true, `Import visible after review at ${width}px`);
+    assert.equal(await layoutPage.locator('#openImport').isEnabled(), true);
+    assert.equal(await layoutPage.locator('#importNextGame').isVisible(), true);
+    assert.equal(await layoutPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    // Both routes must open the same real importer, without a navigation-menu step.
+    await layoutPage.click(index % 2 ? '#importNextGame' : '#openImport');
+    assert.equal(await layoutPage.$eval('#importDialog', element => element.open), true);
+    const nextGame = `[Event "Next review ${width}"]\n[White "Me"]\n[Black "Partner"]\n\n${['1. d4 d5','1. e4 c5','1. Nf3 d5','1. c4 e5'][index]}`;
+    await layoutPage.fill('#pgn', nextGame); await analyzePgn(layoutPage);
+    await layoutPage.waitForFunction(() => document.querySelector('#engineStatus').dataset.state === 'complete');
+    assert.equal(await layoutPage.textContent('#gameTitle'), `Next review ${width}`);
+    assert.equal(await layoutPage.inputValue('#pgn'), nextGame);
+    assert.equal(await layoutPage.locator('#openImport').isVisible(), true);
+    assert.equal(await layoutPage.locator('#importNextGame').isVisible(), true);
+  }
+  console.log('Import remains visible after completed reviews at 320, 390, 768 and 1440px; header and Analyze another game both load and finish subsequent games.');
   assert.deepEqual(layoutErrors, []); await layoutContext.close();
   console.log('Midnight UI: real data, playback, independent flip, show line, interactive chart, mobile panels, SVG graphics and exact 8×8 square geometry at 320–1920px passed.');
   console.log('Browser smoke tests passed.');
