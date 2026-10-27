@@ -15,6 +15,9 @@ for (const file of await readdir('dist/js')) if (file.endsWith('.js')) {
   const check = spawnSync(process.execPath, ['--check', resolve('dist/js', file)], { encoding:'utf8' });
   if (check.status !== 0) throw new Error(check.stderr);
 }
+const { practiceDrills } = await import('../dist/js/practice-library.js');
+if (practiceDrills.length !== 90 || ['opening','mate','puzzle'].some(kind => practiceDrills.filter(drill => drill.kind === kind).length !== 30)) throw new Error('Practice category counts must be 30 each.');
+if (practiceDrills.some(drill => !drill.learningGoal || !drill.subject || !drill.targetSkills?.length)) throw new Error('Every practice needs a learning goal and coach skill tags.');
 for (const color of ['w','b']) for (const piece of ['K','Q','R','B','N','P']) {
   const svg = await readFile(`dist/vendor/pieces/${color}${piece}.svg`, 'utf8');
   if (!svg.includes('<svg') || !svg.includes('viewBox=')) throw new Error('Invalid chess piece SVG.');

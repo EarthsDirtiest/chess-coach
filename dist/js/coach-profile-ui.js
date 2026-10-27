@@ -72,7 +72,9 @@ export class CoachProfileUI {
       for (const id of priority.drills.slice(0, 2)) {
         const drill = practiceDrills.find(drill => drill.id === id); if (!drill) continue;
         const button = node('button', `Practice: ${drill.title}`, 'secondary'); button.type = 'button'; button.id = `coach-${scope}-${index}-${id}`;
-        button.onclick = () => this.onPractice({ drill, origin:scope === 'profile' ? 'coach' : 'practice', focusId:button.id }); card.append(button);
+        button.onclick = () => this.onPractice({ drill, origin:scope === 'profile' ? 'coach' : 'practice', focusId:button.id });
+        const recommendation = node('div', '', 'recommended-practice');
+        recommendation.append(button, node('p', `Learning goal: ${drill.learningGoal}`, 'hint')); card.append(recommendation);
       }
       const example = priority.examples[0];
       if (scope === 'profile' && example) {

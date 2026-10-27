@@ -2,16 +2,17 @@ import { Chess } from '../vendor/chess.js/chess.js';
 import { coachMove } from './chess-review.js';
 import { describeMovePurpose } from './coach-narrative.js';
 import { gameIdentity } from './game-history.js';
+import { recommendPractices } from './practice-goals.js';
 
 export const REPORT_VERSION = 1;
 export const skills = {
-  king:{ title:'Spot mating threats', habit:'Before every move, check your opponent’s checks and the escape squares around your king.', drills:['mate-one-white','mate-one-black'] },
-  finish:{ title:'Finish the mating attack', habit:'When you have an attack, calculate the forcing checks through the opponent’s best defense.', drills:['mate-two'] },
-  pieces:{ title:'Keep your pieces safe', habit:'Before committing, list the opponent’s captures and check whether you can safely recapture.', drills:['loose-queen','pinned-knight'] },
-  forcing:{ title:'Look for forcing moves', habit:'Check checks and captures before choosing a quiet move. Look for moves that create two threats.', drills:['knight-fork','pinned-knight'] },
-  opening:{ title:'Develop with a plan', habit:'Bring pieces into play, contest the center, and make your king safe before launching an attack.', drills:['italian','queens-gambit','sicilian'] },
-  conversion:{ title:'Protect your advantage', habit:'When ahead, check the opponent’s reply and avoid forcing a draw when you can keep playing for a win.', drills:['mate-two','pinned-knight'] },
-  calculation:{ title:'Check the reply before moving', habit:'Name the opponent’s strongest reply before you commit. Practice calculating one more move.', drills:['knight-fork','pinned-knight'] },
+  king:{ title:'Spot mating threats', habit:'Before every move, check your opponent’s checks and the escape squares around your king.' },
+  finish:{ title:'Finish the mating attack', habit:'When you have an attack, calculate the forcing checks through the opponent’s best defense.' },
+  pieces:{ title:'Keep your pieces safe', habit:'Before committing, list the opponent’s captures and check whether you can safely recapture.' },
+  forcing:{ title:'Look for forcing moves', habit:'Check checks and captures before choosing a quiet move. Look for moves that create two threats.' },
+  opening:{ title:'Develop with a plan', habit:'Bring pieces into play, contest the center, and make your king safe before launching an attack.' },
+  conversion:{ title:'Protect your advantage', habit:'When ahead, check the opponent’s reply and avoid forcing a draw when you can keep playing for a win.' },
+  calculation:{ title:'Check the reply before moving', habit:'Name the opponent’s strongest reply before you commit. Practice calculating one more move.' },
 };
 const winner = score => score?.type === 'mate' ? score.winner || (score.value > 0 ? 'white' : 'black') : null;
 const play = (chess, token) => chess.move({ from:token.slice(0, 2), to:token.slice(2, 4), promotion:token[4] });
@@ -27,15 +28,15 @@ function classify(game, state, before, after, lossCp, side) {
     const color = side === 'white' ? 'w' : 'b';
     if (reply?.captured && !reply.isEnPassant() && material(chess, color) < material(new Chess(previous.fen), color)
       && !chess.moves({ verbose:true }).some(move => move.to === reply.to && move.captured)) {
-      return { skill:'pieces', reason:`After ${reply.san}, you lose material and cannot recapture it immediately.` };
+      return { skill:'pieces', topics:['piece-safety','loose-piece'], reason:`After ${reply.san}, you lose material and cannot recapture it immediately.` };
     }
   } catch { /* An incomplete PV is not evidence of a tactical pattern. */ }
   const advantage = before.score.type === 'cp' ? before.score.value * (side === 'white' ? 1 : -1) : 0;
   if (advantage >= 200 && state.drawReason) return { skill:'conversion', reason:'A favorable position was turned into an automatic draw.' };
   const idea = describeMovePurpose(previous.fen, before.bestMove, null);
   const openingPosition = state.moveNumber <= 10 && previous.board.flat().filter(piece => piece !== '.').length >= 24;
-  if (openingPosition && ['development','center','king'].includes(idea?.theme)) return { skill:'opening', reason:'There was a chance to develop, control the center, or castle more effectively.' };
-  if (lossCp >= 100 && ['check','capture'].includes(idea?.theme)) return { skill:'forcing', reason:'A check or capture was worth considering here. Work through that forcing alternative before choosing your move.' };
+  if (openingPosition && ['development','center','king'].includes(idea?.theme)) return { skill:'opening', topics:[{ development:'development', center:'central-control', king:'castle' }[idea.theme]], reason:'There was a chance to develop, control the center, or castle more effectively.' };
+  if (lossCp >= 100 && ['check','capture'].includes(idea?.theme)) return { skill:'forcing', topics:[idea.theme === 'check' ? 'checking-moves' : 'capture'], reason:'A check or capture was worth considering here. Work through that forcing alternative before choosing your move.' };
   return { skill:'calculation', reason:'This move needs another look. Work through the opponent’s reply; a more specific tactical cause was not confirmed.' };
 }
 
@@ -91,7 +92,9 @@ export function buildProfile(input) {
     };
     const opening = [...focus].reverse().find(report => report.incidents.some(incident => incident.skill === 'opening'));
     return { ...skill, key, count, games:games.size, impact:denominator ? impact / denominator : 0,
-      drills:key === 'opening' && opening ? [opening.openingDrill] : skill.drills,
+      drills:recommendPractices({ skill:key, side:examples.at(-1)?.side,
+        topics:[...new Set(examples.flatMap(example => example.topics || []))],
+        preferredId:key === 'opening' ? opening?.openingDrill : undefined }),
       recentRate:rate(recent), previousRate:rate(previous), examples:examples.reverse().slice(0, 3) };
   }).filter(priority => priority.count).sort((a, b) => b.impact - a.impact || b.count - a.count || a.key.localeCompare(b.key));
   const moves = reports.reduce((sum, report) => sum + report.ownMoves, 0);

@@ -1,5 +1,8 @@
-// Small starter set. More training types can be added without changing the review.
-export const mateDrills = [
+import extraOpenings from '../data/openings.js';
+import extraMates from '../data/checkmates.js';
+import extraPuzzles from '../data/puzzles.js';
+
+const starterMates = [
   { id:'mate-one-white', title:'Mate in one · White', fen:'6k1/5ppp/8/8/8/8/5PPP/4R1K1 w - - 0 1',
     analysis:{ score:{ type:'mate', value:1 }, bestMove:'e1e8', pv:['e1e8'], depth:0 } },
   { id:'mate-one-black', title:'Mate in one · Black', fen:'4r1k1/5ppp/8/8/8/8/5PPP/6K1 b - - 0 1',
@@ -8,7 +11,7 @@ export const mateDrills = [
     analysis:{ score:{ type:'mate', value:2 }, bestMove:'d3c2', pv:['d3c2', 'a1a2', 'e2a6'], depth:0 } },
 ];
 
-export const openingDrills = [
+const starterOpenings = [
   { id:'italian', kind:'opening', title:'Italian Game', side:'white',
     description:'Build your center and develop your kingside pieces in a classic open game.',
     intro:'Play the White side of this practice line. The trainer plays prepared replies. Other good opening moves exist.',
@@ -32,7 +35,7 @@ export const openingDrills = [
     source:'https://lichess.org/opening/Sicilian_Defense_Najdorf_Variation/e4_c5_Nf3_d6_d4_cxd4_Nxd4_Nf6_Nc3_a6' },
 ];
 
-export const puzzleDrills = [
+const starterPuzzles = [
   { id:'knight-fork', kind:'puzzle', title:'Fork the king and queen', side:'white',
     description:'Use a forcing move to attack two targets, then collect the prize.',
     intro:'Find a knight check that attacks the queen too. The trainer will play one legal king reply.',
@@ -53,4 +56,19 @@ export const puzzleDrills = [
     finish:'Before calculating a long combination, check for a simple, safe capture.' },
 ];
 
-export const practiceDrills = [...openingDrills, ...mateDrills.map(drill => ({ ...drill, kind:'mate' })), ...puzzleDrills];
+const goals = {
+  'mate-one-white':{ side:'white', subject:'back-rank', learningGoal:'Recognize a back-rank mate when pawns block the king’s escape.', targetSkills:['king','finish'], topics:['back-rank','checking-moves'] },
+  'mate-one-black':{ side:'black', subject:'back-rank', learningGoal:'Recognize the same back-rank mating pattern from Black’s perspective.', targetSkills:['king','finish'], topics:['back-rank','checking-moves'] },
+  'mate-two':{ side:'white', subject:'queen-mate', learningGoal:'Use your king to cover escape squares before finishing with the queen.', targetSkills:['finish','conversion','calculation'], topics:['queen-mate','checking-moves'] },
+  italian:{ subject:'development', learningGoal:'Develop the knight and bishop, support e4, and prepare a safe central expansion.', targetSkills:['opening'], topics:['development','central-control'] },
+  'queens-gambit':{ subject:'central-control', learningGoal:'Challenge d5 with c4 and develop pieces that increase pressure on the center.', targetSkills:['opening'], topics:['central-control','development','pin'] },
+  sicilian:{ subject:'central-control', learningGoal:'Exchange a flank pawn for a central pawn and develop toward the center as Black.', targetSkills:['opening'], topics:['central-control','development'] },
+  'knight-fork':{ subject:'fork', learningGoal:'Use a knight check to attack two targets and win the queen on the next move.', targetSkills:['forcing','calculation'], topics:['fork','checking-moves'] },
+  'pinned-knight':{ subject:'pin', learningGoal:'Exploit a pin while keeping the capturing piece protected.', targetSkills:['pieces','forcing','conversion'], topics:['pin','piece-safety','capture'] },
+  'loose-queen':{ subject:'loose-piece', learningGoal:'Scan open lines for undefended pieces and verify a safe capture.', targetSkills:['pieces'], topics:['loose-piece','piece-safety','capture'] },
+};
+const enrich = (drill, kind) => ({ ...drill, kind, difficulty:'beginner', ...goals[drill.id] });
+export const mateDrills = [...starterMates.map(drill => enrich(drill, 'mate')), ...extraMates];
+export const openingDrills = [...starterOpenings.map(drill => enrich(drill, 'opening')), ...extraOpenings];
+export const puzzleDrills = [...starterPuzzles.map(drill => enrich(drill, 'puzzle')), ...extraPuzzles];
+export const practiceDrills = [...openingDrills, ...mateDrills, ...puzzleDrills];
