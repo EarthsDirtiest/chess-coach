@@ -2428,3 +2428,103 @@ a {
 .recommended-practice button{width:100%;white-space:normal;text-align:left}
 .recommended-practice p{line-height:1.5}
 @media(max-width:600px){.practice-filters{grid-template-columns:1fr 1fr}.practice-filters label:first-child{grid-column:1/-1}}
+
+.chesscom-history {
+  padding: clamp(14px, 3vw, 24px);
+  margin: 18px 0 28px;
+  overflow-wrap: anywhere;
+}
+.chesscom-history h2, .chesscom-profile h3 {
+  margin: 0 0 8px;
+}
+.chesscom-search, .chesscom-filters {
+  display: grid;
+  gap: 12px;
+  align-items: end;
+}
+.chesscom-search {
+  grid-template-columns: minmax(0, 320px) auto auto;
+  justify-content: start;
+  margin-top: 14px;
+}
+.chesscom-filters {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+  margin: 16px 0;
+}
+.chesscom-search label, .chesscom-filters label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.chesscom-history input, .chesscom-history select {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 8px 10px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+}
+.chesscom-search button, .chesscom-actions button, .chesscom-pages button {
+  min-height: 42px;
+}
+.chesscom-profile {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+  background: var(--surface-raised);
+  border-radius: 10px;
+}
+.chesscom-profile img {
+  border-radius: 50%;
+  object-fit: cover;
+}
+.chesscom-profile p, .chesscom-game p, .chesscom-review p {
+  margin: 4px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.chesscom-games {
+  list-style: none;
+  margin: 12px 0;
+  padding: 0;
+}
+.chesscom-game {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.chesscom-game button { flex: none; }
+.chesscom-game .error { color: var(--red); }
+.chesscom-result { margin-left: 8px; }
+.chesscom-result[data-result=win] { color: var(--green); }
+.chesscom-result[data-result=loss] { color: var(--red); }
+.chesscom-result[data-result=draw] { color: var(--yellow); }
+.chesscom-actions, .chesscom-pages, .chesscom-review .row { flex-wrap: wrap; }
+.chesscom-review {
+  margin-bottom: 12px;
+  overflow-wrap: anywhere;
+}
+.chesscom-review .row { margin-top: 8px; }
+.practice-mode .chesscom-review { display: none; }
+@media (max-width: 800px) {
+  #reviewBoard:has(.chesscom-review:not([hidden])) .control {
+    gap: 5px;
+    flex-wrap: wrap;
+  }
+  #reviewBoard:has(.chesscom-review:not([hidden])) .control .edge-control { display: inline-flex; }
+  #reviewBoard:has(.chesscom-review:not([hidden])) .control .secondary { min-width: 34px; }
+}
+@media (max-width: 460px) {
+  .chesscom-search { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .chesscom-search label { grid-column: 1 / -1; }
+  .chesscom-game { flex-wrap: wrap; }
+}

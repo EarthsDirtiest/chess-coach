@@ -99,7 +99,7 @@ export class AnalysisWorkspace {
     for (const id of ['verticalGauge','mobileGauge']) $(id).style.setProperty('--white-share', `${share}%`);
     $('mobileGauge').setAttribute('aria-valuenow', String(Math.round(share))); $('mobileGauge').setAttribute('aria-valuetext', `${score}, ${advantage}`);
     text('liveDepth', analysis ? analysis.terminal ? 'Terminal position' : `Depth ${analysis.depth}` : 'Awaiting Stockfish');
-    const status = { idle:'Ready to analyze', loading:'Loading Stockfish', running:'Analyzing game', paused:'Review paused', complete:'Analysis complete', error:'Engine unavailable' };
+    const status = { idle:'Ready to analyze', ready:'Ready to analyze', loading:'Loading Stockfish', running:'Analyzing game', paused:'Review paused', complete:'Analysis complete', error:'Engine unavailable' };
     text('headerStatus', status[phase]);
     $('importNextGame').hidden = !game || phase !== 'complete';
     text('headerDepth', analysis && !analysis.terminal ? `Stockfish · Depth ${analysis.depth}` : 'Stockfish · local engine');

@@ -5,6 +5,7 @@ import { resolve, extname, sep } from 'node:path';
 import { chromium } from 'playwright';
 import { openingDrills, puzzleDrills } from '../dist/js/practice-library.js';
 import { Chess } from '../dist/vendor/chess.js/chess.js';
+import { checkChessComHistory } from './chess-com-browser.js';
 
 async function openImport(page) {
   if (await page.$eval('#importDialog', element => element.open)) return;
@@ -649,6 +650,8 @@ try {
   console.log('Import remains visible after completed reviews at 320, 390, 768 and 1440px; header and Analyze another game both load and finish subsequent games.');
   assert.deepEqual(layoutErrors, []); await layoutContext.close();
   console.log('Midnight UI: real data, playback, independent flip, show line, interactive chart, mobile panels, SVG graphics and exact 8×8 square geometry at 320–1920px passed.');
+  await checkChessComHistory(browser, url);
+  console.log('Chess.com history: search, CORS fallback, filters, pagination, sync, cached/offline data and the shared Stockfish review passed.');
   console.log('Browser smoke tests passed.');
 } finally {
   await browser?.close();
