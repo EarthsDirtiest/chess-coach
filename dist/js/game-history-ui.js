@@ -32,7 +32,7 @@ export class GameHistoryUI {
       $('historyCount').textContent = 'Storage unavailable'; $('historyEmpty').hidden = true;
     }
   }
-  async save(game, pgn) {
-    const result = await this.store.save(game, pgn); await this.refresh(); return result;
+  async save(game, pgn, chessCom) {
+    const result = await this.store.save(game, pgn, chessCom); await this.refresh(); return result;
   }
 }

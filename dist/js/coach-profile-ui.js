@@ -45,7 +45,7 @@ export class CoachProfileUI {
   renderInline() {
     const { game, side, phase, track } = this.context;
     let status = 'Finish a game review to get a personal coaching update.', stats = '', advice = '';
-    if (game && !track) status = 'Example game: this review will not change your coaching profile.';
+    if (game && !track) status = game.chessCom ? 'This player’s review is separate from your personal coaching profile.' : 'Example game: this review will not change your coaching profile.';
     else if (game && phase !== 'complete') status = 'Your profile will update when the whole review finishes. Paused or incomplete reviews do not change your score.';
     else if (game && !side) status = 'Analysis complete. Choose “I played White” or “I played Black” to add your moves to your coaching profile.';
     else if (game) {

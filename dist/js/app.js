@@ -9,6 +9,9 @@ import { GameHistoryUI } from './game-history-ui.js';
 import { CoachProfileUI } from './coach-profile-ui.js';
 import { AnalysisWorkspace } from './analysis-workspace.js';
 import { renderMoves } from './move-list.js';
+import { ChessComHistoryUI } from './chess-com-history-ui.js';
+import { gameIdentity } from './game-history.js';
+import { timeControlLabel } from './chess-com-games.js';
 
 const $ = id => document.getElementById(id);
 const start = () => ['rnbqkbnr','pppppppp','........','........','........','........','PPPPPPPP','RNBQKBNR'].map(row => row.split(''));
@@ -26,19 +29,32 @@ const workspace = new AnalysisWorkspace({ onNavigate:jump, onFlip:() => { boardF
 const practice = new MatePracticeUI({ onReturn:returnToReview });
 const hub = new PracticeHub({ onStart:options => enterPractice({ ...options, origin:'practice' }), onReview:() => changeTab('review') });
 const historyUI = new GameHistoryUI({ onOpen:record => {
-  try { if (record.report) $('player').value = record.report.side; load(record.pgn, { save:false }); changeTab('review'); $('saveStatus').textContent = 'Opened from game history. Stockfish is reviewing the saved PGN.'; }
+  try {
+    if (record.report && !record.chessCom) $('player').value = record.report.side;
+    load(record.pgn, { save:false, chessCom:record.chessCom });
+    openReviewFromHistory();
+    if (!record.chessCom) $('saveStatus').textContent = 'Opened from game history. Stockfish is reviewing the saved PGN.';
+  }
   catch (error) { $('historyError').textContent = `This saved game could not be opened: ${error.message}`; }
+} });
+const chessComHistory = new ChessComHistoryUI({ store:historyUI.store, onReview:({ pgn, ...metadata }) => {
+  load(pgn, { chessCom:metadata });
+  openReviewFromHistory();
 } });
 const coachProfile = new CoachProfileUI({ store:historyUI.store, onUpdate:() => workspace.renderSummary(), onPractice:enterPractice, onEvidence:async example => {
   try {
     const record = await historyUI.store.get(example.gameId);
     if (!record) throw new Error('The original PGN is unavailable. Import the game again to revisit this move.');
-    $('player').value = example.side; load(record.pgn, { save:false }); changeTab('review'); jump(example.ply);
+    $('player').value = example.side;
+    load(record.pgn, { save:false, chessCom:record.chessCom });
+    changeTab('review');
+    jump(example.ply);
   } catch (error) { $('coachProfileError').textContent = error.message; }
 } });
 
 function confirmedSide() {
   if (!game) return null;
+  if (game.chessCom) return game.chessCom.player.name.toLowerCase() === 'earthsdirtiest' ? game.chessCom.color : null;
   if (['white','black'].includes($('player').value)) return $('player').value;
   if (game.headers.White?.toLowerCase() === 'earthsdirtiest') return 'white';
   if (game.headers.Black?.toLowerCase() === 'earthsdirtiest') return 'black';
@@ -65,8 +81,18 @@ function changeTab(tab) {
   if (practice.active) { returnToReview({ destination:tab }); return; }
   if (activeTab === tab) return;
   tabScroll[activeTab] = window.scrollY; activateTab(tab); window.scrollTo(0, tabScroll[tab]);
-  if (tab === 'history') void historyUI.refresh();
+  if (tab === 'history') {
+    void historyUI.refresh();
+    chessComHistory.visit();
+  }
   if (tab === 'coach') void coachProfile.refresh();
+}
+function openReviewFromHistory() {
+  changeTab('review');
+  workspace.setPanel('coach');
+  window.scrollTo(0, 0);
+  $('positionTitle').tabIndex = -1;
+  $('positionTitle').focus({ preventScroll:true });
 }
 function enterPractice({ drill = null, positionPly = ply, origin = 'review', focusId = 'tryMate' } = {}) {
   if (practice.active) return;
@@ -128,12 +154,16 @@ function cancelReview(nextPhase = 'paused') {
   engine = null; phase = nextPhase;
   disposeEngine(previous);
 }
-function load(input, { save = true, track = true } = {}) {
+function load(input, { save = true, track = true, chessCom = null } = {}) {
   if (practice.active) return;
   const nextGame = parseGame(input);
+  if (chessCom) {
+    nextGame.chessCom = chessCom;
+    track = chessCom.player.name.toLowerCase() === 'earthsdirtiest';
+  }
   importVersion++;
-  cancelReview('idle');
-  game = nextGame; ply = 0; side = selectedSide(game.headers);
+  cancelReview(chessCom ? 'ready' : 'idle');
+  game = nextGame; ply = 0; side = chessCom?.color || selectedSide(game.headers);
   boardFlipped = false;
   trackGame = track; reportSignature = '';
   $('pgn').value = input;
@@ -141,17 +171,40 @@ function load(input, { save = true, track = true } = {}) {
   $('error').textContent = '';
   render();
   $('saveStatus').textContent = save ? 'Saving to local game history…' : '';
-  currentGameSaved = save ? historyUI.save(nextGame, input) : Promise.resolve();
+  currentGameSaved = save ? historyUI.save(nextGame, input, chessCom) : Promise.resolve();
   if (save) void currentGameSaved.then(result => {
     if (game === nextGame) $('saveStatus').textContent = result.duplicate ? 'This match is already in your history. No duplicate was added.' : 'Saved to game history in this browser.';
   }).catch(error => { if (game === nextGame) $('saveStatus').textContent = `${error.message} This review is available, but the game was not saved.`; });
-  void startReview();
+  if (chessCom) void restoreChessComAnalysis(nextGame, $('quality').value);
+  else void startReview();
+}
+// A completed search is reusable for the same game, engine and quality.
+function analysisKey(game, quality) {
+  return `analysis:stockfish-19-lite-single:1:${quality}:${game.chessCom.id}`;
+}
+async function restoreChessComAnalysis(target, quality) {
+  const version = runVersion;
+  try {
+    const cached = await historyUI.store.readChessComCache(analysisKey(target, quality));
+    if (game !== target || runVersion !== version || phase !== 'ready' || $('quality').value !== quality) return;
+    if (!cached || cached.identity !== gameIdentity(target) || !Array.isArray(cached.analyses)
+      || cached.analyses.length !== target.states.length || cached.analyses.some(item => !item?.score)) return;
+    target.analyses = cached.analyses;
+    target.analysisQuality = quality;
+    lastReviewQuality = quality;
+    phase = 'complete';
+    render(); recordCompletedReview();
+  } catch { /* The current game can still be analyzed if browser storage is unavailable. */ }
 }
 async function startReview() {
   if (!game || practice.active) return;
   cancelReview('loading');
   const version = runVersion, target = game, quality = qualities[$('quality').value] || qualities.balanced;
   lastReviewQuality = $('quality').value;
+  if (target.chessCom && target.analysisQuality !== lastReviewQuality) {
+    target.analyses.fill(null);
+    target.analysisQuality = lastReviewQuality;
+  }
   const isCurrent = () => version === runVersion && game === target;
   let activeEngine = null;
   $('error').textContent = '';
@@ -174,7 +227,14 @@ async function startReview() {
         render();
       }
     }
-    if (isCurrent()) { phase = 'complete'; render(); recordCompletedReview(); }
+    if (isCurrent()) {
+      phase = 'complete'; render(); recordCompletedReview();
+      if (target.chessCom) {
+        void historyUI.store.writeChessComCache(analysisKey(target, lastReviewQuality), {
+          identity:gameIdentity(target), analyses:target.analyses.slice(),
+        }).catch(() => {});
+      }
+    }
   } catch (error) {
     if (isCurrent()) {
       phase = 'error';
@@ -191,11 +251,26 @@ function renderEngine() {
   const busy = phase === 'loading' || phase === 'running';
   $('engineStatus').dataset.state = phase;
   const progress = total ? `${done} / ${total} positions reviewed` : 'Load a game to start Stockfish.';
-  const prefixes = { loading:'Loading local Stockfish… ', running:'Stockfish analyzing… ', paused:'Review paused. ', complete:'Review complete. ', error:'Engine unavailable. ' };
+  const prefixes = { ready:'Ready to analyze. ', loading:'Loading local Stockfish… ', running:'Stockfish analyzing… ', paused:'Review paused. ', complete:'Review complete. ', error:'Engine unavailable. ' };
   $('engineStatus').textContent = (prefixes[phase] || '') + progress;
   $('engineProgress').max = total || 1; $('engineProgress').value = done;
   $('reviewAction').disabled = !game;
-  $('reviewAction').textContent = busy ? 'Stop review' : phase === 'complete' ? 'Reanalyze game' : phase === 'error' ? 'Retry remaining positions' : 'Resume review';
+  const action = busy ? 'Stop review' : phase === 'complete' ? 'Reanalyze game'
+    : phase === 'error' ? 'Retry remaining positions' : phase === 'ready' ? 'Analyze game' : 'Resume review';
+  $('reviewAction').textContent = action;
+  $('chessComAnalyze').textContent = action;
+}
+function renderChessComReview() {
+  const metadata = game?.chessCom;
+  $('chessComReview').hidden = !metadata;
+  $('player').closest('label').hidden = Boolean(metadata);
+  if (!metadata) return;
+  const name = player => player.name + (player.rating == null ? '' : ` (${player.rating})`);
+  $('chessComReviewPlayers').textContent = `${name(metadata.white)} vs ${name(metadata.black)}`;
+  $('chessComReviewDetails').textContent = [
+    metadata.result === '*' ? 'Result unavailable' : metadata.result, metadata.date,
+    timeControlLabel(metadata.timeControl), metadata.opening.name || metadata.opening.code,
+  ].filter(Boolean).join(' · ');
 }
 function render() {
   if (practice.active) { practice.render(); return; }
@@ -212,6 +287,7 @@ function render() {
   $('positionTitle').textContent = moveLabel(state);
   $('sideLabel').textContent = (perspective === 'black' ? 'Black' : 'White') + ' perspective';
   $('gameTitle').textContent = game ? (game.headers.Event || 'GAME REVIEW') : 'YOUR BOARD';
+  renderChessComReview();
   const analysis = game?.analyses[ply];
   $('evaluation').textContent = analysis ? formatScore(analysis.score) : 'Pending';
   $('searchDepth').textContent = analysis ? (analysis.terminal ? 'Terminal position' : `Depth ${analysis.depth}`) : 'Awaiting Stockfish';
@@ -264,13 +340,22 @@ $('pgnFile').onchange = async event => {
   finally { event.target.value = ''; }
 };
 $('demo').onclick = () => { $('pgn').value = sample; $('player').value = 'auto'; try { load(sample, { save:false, track:false }); } catch (error) { $('error').textContent = error.message; } };
-$('reviewAction').onclick = () => {
+$('chessComBack').onclick = () => {
+  if (practice.active || !game?.chessCom) return;
+  const { id } = game.chessCom;
+  changeTab('history');
+  chessComHistory.returnFromReview(id);
+};
+$('chessComAnalyze').onclick = $('reviewAction').onclick = () => {
   if (!game || practice.active) return;
   if (phase === 'loading' || phase === 'running') { cancelReview(); render(); return; }
   if (phase === 'complete') game.analyses.fill(null);
   void startReview();
 };
-$('player').onchange = () => { if (practice.active) return; if (game) side = selectedSide(game.headers); else if ($('player').value !== 'auto') side = $('player').value; render(); recordCompletedReview(); };
+$('quality').onchange = () => {
+  if (game?.chessCom && phase === 'ready') void restoreChessComAnalysis(game, $('quality').value);
+};
+$('player').onchange = () => { if (practice.active || game?.chessCom) return; if (game) side = selectedSide(game.headers); else if ($('player').value !== 'auto') side = $('player').value; render(); recordCompletedReview(); };
 $('first').onclick = () => jump(0); $('prev').onclick = () => jump(ply - 1); $('next').onclick = () => jump(ply + 1); $('last').onclick = () => jump(game?.history.length || 0);
 $('seek').oninput = event => jump(Number(event.target.value));
 $('copy').onclick = async () => {

@@ -25,6 +25,11 @@
 <main class="layout" id="reviewView" role="tabpanel" aria-labelledby="reviewTab">
  <section class="panel boardpanel" id="reviewBoard" aria-label="Board and game navigation">
   <div class="board-heading"><div><div class="eyebrow" id="gameTitle">YOUR BOARD</div><h2 id="positionTitle">Starting position</h2></div><span class="pill" id="sideLabel">Black perspective</span></div>
+  <div id="chessComReview" class="chesscom-review" hidden>
+    <strong id="chessComReviewPlayers"></strong>
+    <p id="chessComReviewDetails"></p>
+    <div class="row"><button class="secondary" id="chessComBack">Back to Game History</button><button class="primary" id="chessComAnalyze">Analyze game</button></div>
+  </div>
   <div class="board-wrap"><div class="ranks" id="ranks" aria-hidden="true"></div><div class="board" id="board" aria-label="Chessboard"></div><svg id="moveArrow" class="board-arrow" viewBox="0 0 100 100" aria-hidden="true"></svg><div class="coords" id="coords" aria-hidden="true"></div></div>
   <div class="mobile-evaluation"><strong id="mobileEvaluation">—</strong><div class="evaluation-track" role="meter" aria-label="Position evaluation, White viewpoint" id="mobileGauge" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"><i></i><b></b></div><span id="mobileAdvantage">Awaiting analysis</span></div>
   <div class="row control"><button class="secondary icon-button edge-control" id="first" aria-label="First move"><span data-icon="first"></span></button><button class="secondary icon-button" id="prev" aria-label="Previous move"><span data-icon="prev"></span></button><button class="play-button icon-button" id="playMoves" aria-label="Play through game"><span data-icon="play"></span></button><button class="secondary icon-button" id="next" aria-label="Next move"><span data-icon="next"></span></button><button class="secondary icon-button edge-control" id="last" aria-label="Last move"><span data-icon="last"></span></button><button class="secondary flip-button" id="flipBoard"><span data-icon="flip"></span><span>Flip board</span></button><span id="step">0 / 0</span></div>
@@ -96,7 +101,35 @@
  <details class="coach-method"><summary>How I choose priorities and track progress</summary><p>Only your moves in fully analyzed, saved games count. Select “I played White” or “I played Black”, or let me detect EarthsDirtiest. Example games and practice completions do not raise your game score. Reanalyzing a match or correcting your side replaces its report.</p><p>The score starts at 100. An evaluation loss of at least half a pawn costs points for that move: a one-pawn loss costs 20, capped at 60. Allowing or losing a found forced mate costs 70 separately, without pretending mate is a pawn value. Those penalties are averaged over your moves. A move matching the previous engine choice is not penalized for a changed follow-up search.</p><p>Priorities combine error frequency and severity across your latest 10 analyzed games, with recent games weighted more strongly. Tactical labels require legal board evidence; unexplained losses become calculation practice. Progress compares equal groups of up to five unique reviews in analysis order. Different opponents, positions and search settings can affect the scores.</p><p>Opening and tactic recommendations teach relevant habits using the available prepared exercises. Earlier saved games contribute after you reopen and fully analyze them.</p></details>
 </main>
 <main id="historyView" class="history-home" role="tabpanel" aria-labelledby="historyTab" hidden>
- <div class="eyebrow">YOUR GAMES</div><h1>Game history</h1><p>Uploaded and pasted games are saved in this browser. Reopen any match for a new Stockfish review.</p>
+ <h1>Game history</h1>
+ <section class="panel chesscom-history" aria-labelledby="chessComHeading">
+  <h2 id="chessComHeading">Chess.com Game History</h2>
+  <form id="chessComSearch" class="chesscom-search">
+   <label for="chessComUsername">Chess.com username<input id="chessComUsername" type="text" maxlength="50" autocapitalize="none" spellcheck="false" required></label>
+   <button class="primary" type="submit">Search</button><button class="secondary" type="button" id="chessComRefresh" hidden>Refresh</button>
+  </form>
+  <p id="chessComStatus" role="status" aria-live="polite"></p>
+  <p id="chessComError" class="error" role="alert"></p>
+  <div id="chessComProfile" class="chesscom-profile" hidden>
+   <img id="chessComAvatar" width="52" height="52" alt="" referrerpolicy="no-referrer" hidden>
+   <div><h3 id="chessComName"></h3><p id="chessComRatings"></p><p id="chessComCount"></p></div>
+  </div>
+  <div id="chessComHistory" hidden>
+   <div id="chessComFilters" class="chesscom-filters">
+    <label>Result<select id="chessComOutcome"><option value="">All results</option><option value="win">Wins</option><option value="loss">Losses</option><option value="draw">Draws</option></select></label>
+    <label>Game type<select id="chessComType"><option value="">All types</option><option value="rapid">Rapid</option><option value="blitz">Blitz</option><option value="bullet">Bullet</option><option value="daily">Daily</option></select></label>
+    <label>Color<select id="chessComColor"><option value="">Both colors</option><option value="white">White</option><option value="black">Black</option></select></label>
+    <label>Archive month<select id="chessComMonth"><option value="">All retrieved months</option></select></label>
+    <label>Opponent<input id="chessComOpponent" type="search" placeholder="Opponent username"></label>
+    <label>Sort by<select id="chessComSort"><option value="">Newest first</option><option value="oldest">Oldest first</option><option value="highest">Highest-rated opponents</option><option value="lowest">Lowest-rated opponents</option></select></label>
+   </div>
+   <div class="row chesscom-actions"><button class="secondary" id="chessComOlder">Load older games</button><button class="secondary" id="chessComAll">Import complete history</button><button class="secondary" id="chessComStop" hidden>Stop download</button></div>
+   <p id="chessComEmpty" class="hint" hidden></p>
+   <ul id="chessComGames" class="chesscom-games"></ul>
+   <nav class="row chesscom-pages" id="chessComPages" aria-label="Chess.com game pages" hidden><button class="secondary" id="chessComPrevious">Previous page</button><span id="chessComPage" role="status"></span><button class="secondary" id="chessComNext">Next page</button></nav>
+  </div>
+ </section>
+ <h2>Saved reviews</h2><p>Uploaded, pasted, and opened Chess.com games are saved in this browser.</p>
  <div class="note">Duplicates are detected from the starting position and main-line moves. Comments, formatting, or changed headers do not add another copy. This history stays on this device and browser; clearing site data removes it.</div>
  <p id="historyCount" role="status">Loading saved games…</p><div id="historyError" class="error" role="alert"></div>
  <div id="historyEmpty" class="history-empty" hidden>No games saved yet. Paste a PGN or upload a file in Game review to start your history.</div>

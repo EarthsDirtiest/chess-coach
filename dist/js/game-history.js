@@ -13,12 +13,13 @@ export class GameHistory {
     if (this.database) return this.database;
     this.database = new Promise((resolve, reject) => {
       if (!this.indexedDB) { reject(new Error('This browser does not provide local game storage.')); return; }
-      const request = this.indexedDB.open(this.name, 2);
+      const request = this.indexedDB.open(this.name, 3);
       let abandoned = false;
       request.onupgradeneeded = () => {
         const db = request.result;
         if (!db.objectStoreNames.contains('games')) db.createObjectStore('games', { keyPath:'id' });
         if (!db.objectStoreNames.contains('coachReports')) db.createObjectStore('coachReports', { keyPath:'id' });
+        if (!db.objectStoreNames.contains('chessComCache')) db.createObjectStore('chessComCache');
       };
       request.onerror = () => { abandoned = true; reject(new Error('Local game history could not be opened.')); };
       request.onblocked = () => { abandoned = true; reject(new Error('Close other Chess Coach tabs to finish opening local history.')); };
@@ -31,7 +32,7 @@ export class GameHistory {
     }).catch(error => { this.database = null; throw error; });
     return this.database;
   }
-  async save(game, pgn) {
+  async save(game, pgn, chessCom = null) {
     const db = await this.open(), id = gameIdentity(game);
     return new Promise((resolve, reject) => {
       // Read and insert in the same write transaction, so concurrent tabs cannot add copies.
@@ -41,11 +42,39 @@ export class GameHistory {
       request.onsuccess = () => {
         if (request.result) { result = { duplicate:true, record:request.result }; return; }
         const record = { id, pgn, headers:{ ...game.headers }, halfMoves:game.history.length, uploadedAt:Date.now() };
+        if (chessCom) record.chessCom = chessCom;
         result = { duplicate:false, record };
         try { store.add(record); } catch { transaction.abort(); }
       };
       transaction.oncomplete = () => resolve(result);
       transaction.onerror = transaction.onabort = () => reject(new Error('This game could not be saved. Browser storage may be full or disabled.'));
+    });
+  }
+  async readChessComCache(key) {
+    const db = await this.open();
+    return new Promise((resolve, reject) => {
+      const request = db.transaction('chessComCache', 'readonly').objectStore('chessComCache').get(key);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(new Error('The Chess.com cache could not be read.'));
+    });
+  }
+  async writeChessComCache(key, value) {
+    const db = await this.open();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction('chessComCache', 'readwrite');
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = transaction.onabort = () => reject(new Error('The Chess.com cache could not be saved.'));
+      transaction.objectStore('chessComCache').put(value, key);
+    });
+  }
+  async readChessComArchives(username) {
+    const db = await this.open();
+    const prefix = 'month:' + username + ':';
+    return new Promise((resolve, reject) => {
+      const range = IDBKeyRange.bound(prefix, prefix + '\uffff');
+      const request = db.transaction('chessComCache', 'readonly').objectStore('chessComCache').getAll(range);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(new Error('Cached Chess.com archives could not be read.'));
     });
   }
   async list() {
